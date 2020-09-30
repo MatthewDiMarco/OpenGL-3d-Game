@@ -58,8 +58,8 @@ set(CHAPTERS
 	main    
 )
 
-set(test
-	01
+set(main
+	v1
 )
 
 configure_file(configuration/root_directory.h.in configuration/root_directory.h)
