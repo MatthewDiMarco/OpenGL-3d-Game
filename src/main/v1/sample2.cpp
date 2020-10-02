@@ -62,7 +62,12 @@ float box[] = {
 	-0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f,  1.0f
 };
 
+bool checkCollision(glm::vec3 pos1, glm::vec3 pos2);
+
+// callbacks
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+
 void process_input(GLFWwindow *window);
 unsigned int loadTexture(char const * path);
 
@@ -72,8 +77,17 @@ const unsigned int SCR_HEIGHT = 800;
 
 // camera
 glm::vec3 camera_pos   = glm::vec3(0.0f, 0.9f,  3.0f);
+glm::vec3 camera_dir   = glm::normalize(camera_pos - glm::vec3(0.0f, 0.0f, 0.0f)); 
 glm::vec3 camera_front = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 camera_up    = glm::vec3(0.0f, 1.0f,  0.0f);
+glm::vec3 camera_right = glm::normalize(glm::cross(camera_up, camera_dir));
+glm::vec3 player_front = glm::vec3(0.0f, 0.0f, -1.0f); // track player's front w/o upwards direction of camera
+bool firstMouse = true;
+float yaw = -90.0f; // side-to-side angle -- or horizontal rotation
+float pitch = 0.0f; // up-down angle -- or vertical rotation
+float lastX = SCR_WIDTH / 2.0f;
+float lastY = SCR_HEIGHT / 2.0f;
+const float sensitivity = 0.05f;
 
 // lighting
 glm::vec3 light_pos(0.0f, 1.0f, 0.1f);
@@ -119,7 +133,7 @@ int main()
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);	
 
 #ifdef __APPLE__
 //	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // uncomment this statement for OS X
@@ -136,6 +150,9 @@ int main()
 	}
 	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+	glfwSetCursorPosCallback(window, mouse_callback);
+
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // capture and fix cursor
 
 	// glad: load all OpenGL function pointers
 	// ---------------------------------------
@@ -555,7 +572,7 @@ int main()
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
 void process_input(GLFWwindow *window)
-	{
+{
     	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         	glfwSetWindowShouldClose(window, true);
 
@@ -567,14 +584,15 @@ void process_input(GLFWwindow *window)
 		cameraSpeed = 2.5 * delta_time * 2;	// double speed with "Shift" pressed
 
 
+	//move around
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-		camera_pos += cameraSpeed * camera_front;
+		camera_pos += cameraSpeed * player_front;
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-		camera_pos -= cameraSpeed * camera_front;
+		camera_pos -= cameraSpeed * player_front;
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-		camera_pos -= glm::normalize(glm::cross(camera_front, camera_up)) * cameraSpeed;
+		camera_pos -= camera_right * cameraSpeed;
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-		camera_pos += glm::normalize(glm::cross(camera_front, camera_up)) * cameraSpeed;
+		camera_pos += camera_right * cameraSpeed;
 
 
 	//toggle red button
@@ -598,6 +616,52 @@ void process_input(GLFWwindow *window)
 	}
 }
 
+// 
+// ---------------------------------------------------------------------------------------------
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	if (firstMouse)
+	{
+		lastX = xpos;
+		lastY = ypos;
+		firstMouse = false;
+	}
+
+	//update coordinates
+	float xoffset = xpos - lastX;
+	float yoffset = lastY - ypos;
+	lastX = xpos;
+	lastY = ypos;
+
+	//sensitivity
+	xoffset *= sensitivity;
+	yoffset *= sensitivity;
+
+	//modify camera angle
+	yaw += xoffset;
+	pitch += yoffset;
+
+	//constraints -- ensure we don't flip the direction vector
+	if (pitch > 89.0f) 
+	{
+		pitch = 89.0f;
+	}
+	else if (pitch < -89.0f)
+	{
+		pitch = -89.0f;
+	}
+
+	//calculate the actual direction vector -- where we're pointing
+	glm::vec3 direction;
+	direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+	direction.y = sin(glm::radians(pitch));
+	direction.z	= sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+	camera_front = glm::normalize(direction);
+
+	//recalculate right and player front
+	camera_right = glm::normalize(glm::cross(camera_front, camera_up));
+	player_front = glm::vec3(camera_front.x, 0.0, camera_front.z);
+}
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
 // ---------------------------------------------------------------------------------------------
@@ -608,6 +672,8 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 	glViewport(0, 0, width, height);
 }
 
+// load a texture for a surface
+// ----------------------------
 unsigned int loadTexture(char const * path)
 {
 	unsigned int textureID;
@@ -644,4 +710,13 @@ unsigned int loadTexture(char const * path)
 	}
 
 	return textureID;
+}
+
+bool checkCollision(glm::vec3 pos1, glm::vec3 pos2) 
+{
+	bool colX = pos1.x + 1 >= pos2.x && pos2.x + 1 >= pos1.x;
+	bool colY = pos1.y + 1 >= pos2.y && pos2.y + 1 >= pos1.y;
+	bool colZ = pos1.z + 1 >= pos2.z && pos2.z + 1 >= pos1.z;
+
+	return colX && colY && colZ;
 }

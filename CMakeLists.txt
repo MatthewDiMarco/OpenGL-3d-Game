@@ -60,6 +60,7 @@ set(CHAPTERS
 
 set(main
 	v1
+	example1
 )
 
 configure_file(configuration/root_directory.h.in configuration/root_directory.h)
