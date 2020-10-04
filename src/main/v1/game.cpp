@@ -12,6 +12,8 @@
 #include <iostream>
 #include <string>
 
+#include "entity.hpp"
+
 #define PI 3.14159265
 
 // Box coordinate with 36 vertices.
@@ -62,32 +64,30 @@ float box[] = {
 	-0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f,  1.0f
 };
 
-bool checkCollision(glm::vec3 pos1, glm::vec3 pos2);
-
-// callbacks
-void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+// Prototype Declarations
+void mouse_callback(GLFWwindow* window, double xpos, double ypos); 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-
 void process_input(GLFWwindow *window);
 unsigned int loadTexture(char const * path);
 
-// settings
+// Screen
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 800;
 
-// camera
-glm::vec3 camera_pos   = glm::vec3(0.0f, 0.9f,  3.0f);
-glm::vec3 camera_dir   = glm::normalize(camera_pos - glm::vec3(0.0f, 0.0f, 0.0f)); 
-glm::vec3 camera_front = glm::vec3(0.0f, 0.0f, -1.0f);
-glm::vec3 camera_up    = glm::vec3(0.0f, 1.0f,  0.0f);
-glm::vec3 camera_right = glm::normalize(glm::cross(camera_up, camera_dir));
-glm::vec3 player_front = glm::vec3(0.0f, 0.0f, -1.0f); // track player's front w/o upwards direction of camera
-bool firstMouse = true;
-float yaw = -90.0f; // side-to-side angle -- or horizontal rotation
-float pitch = 0.0f; // up-down angle -- or vertical rotation
-float lastX = SCR_WIDTH / 2.0f;
-float lastY = SCR_HEIGHT / 2.0f;
-const float sensitivity = 0.05f;
+// Camera
+Camera cam = Camera(
+	glm::vec3(0.0f, 0.9f, 3.0f), 	// Position
+	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
+	glm::vec3(0.0f, 1.0f,  0.0f),	// Up face
+ 	SCR_WIDTH, SCR_HEIGHT
+);
+
+// Player
+Entity player = Entity(
+	cam.getPosition(),				// Position 
+	cam.getUp(), 					// Up face
+	glm::vec3(0.0f, 0.0f, -1.0f) 	// track player's front w/o upwards direction of camera
+);
 
 // lighting
 glm::vec3 light_pos(0.0f, 1.0f, 0.1f);
@@ -96,7 +96,7 @@ glm::vec3 light_pos(0.0f, 1.0f, 0.1f);
 float delta_time = 0.0f;	// time between current frame and last frame
 float last_frame = 0.0f;
 
-//Toggle (Animation or states)
+// Toggle (animation or states)
 bool BUTTON_PRESSED = false;
 int BUTTON_DELAY = 0;
 bool BUTTON_CLOSE_ENOUGH = false;
@@ -104,8 +104,7 @@ bool BUTTON_CLOSE_ENOUGH = false;
 bool SHOW_COORDINATE = false;
 int SHOW_DELAY = 0;
 
-
-//Animation Variables
+// Animation Variables
 float curtin_rotate_y = 0.0;
 float curtin_translate_y = 0.0;
 
@@ -120,28 +119,24 @@ void update_delay()
 // Toggle button pressing only if the camera is close enough.
 void toggle_button_distance(glm::vec3 button_pos)
 {
-	if(glm::length(camera_pos - button_pos) <= 1.6f)
+	if(glm::length(cam.getPosition() - button_pos) <= 1.6f)
 		BUTTON_CLOSE_ENOUGH = true;
 	else
 		BUTTON_CLOSE_ENOUGH = false;
 }
 
+// Main Algorithm
+// --------------
 int main()
 {
 	// glfw: initialize and configure
-	// ------------------------------
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);	
 
-#ifdef __APPLE__
-//	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // uncomment this statement for OS X
-#endif
-
 	// glfw window creation
-	// --------------------
-	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGL Tutorial", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Escape Game", NULL, NULL);
 	if (window == NULL)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
@@ -149,31 +144,29 @@ int main()
 		return -1;
 	}
 	glfwMakeContextCurrent(window);
+
+	// Callback functions 
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 	glfwSetCursorPosCallback(window, mouse_callback);
 
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // capture and fix cursor
+	// Capture and fixate cursor
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	// glad: load all OpenGL function pointers
-	// ---------------------------------------
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
 		std::cout << "Failed to initialize GLAD" << std::endl;
 		return -1;
 	}
 
-	// configure global opengl state
-	// -----------------------------
+	// Configure global opengl state
 	glEnable(GL_DEPTH_TEST);
 
-	// build and compile our shader zprogram
-	// ------------------------------------
+	// Build and compile our shader zprogram
 	Shader lighting_shader("./sample2.vs", "./sample2.fs");
 	Shader lamp_shader("./lamp.vs", "./lamp.fs");
 
-	// set up vertex data (and buffer(s)) and configure vertex attributes
-	// ------------------------------------------------------------------
-
+	// Set up vertex data (and buffer(s)) and configure vertex attributes
 	unsigned int VBO_box, VAO_box;
 
 	glGenVertexArrays(1, &VAO_box);
@@ -194,8 +187,6 @@ int main()
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
 	glEnableVertexAttribArray(2);
 
-
-
 	// second, configure the light's VAO (VBO stays the same; the vertices are the same for the light object which is also a 3D cube)
 	unsigned int VAO_light;
 	glGenVertexArrays(1, &VAO_light);
@@ -206,12 +197,7 @@ int main()
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
-
-
-
-
-	// load and create a texture 
-	// -------------------------
+	// Load and create a texture 
 	unsigned int tex_wood_diffuse, tex_street_diffuse, tex_grass_diffuse, tex_marble_diffuse, tex_curtin_diffuse;
 	unsigned int tex_wood_specular, tex_street_specular, tex_grass_specular, tex_marble_specular, tex_curtin_specular;
 
@@ -239,51 +225,44 @@ int main()
 	tex_green_specular = loadTexture(FileSystem::getPath("resources/textures/green_specular.jpg").c_str());
 	tex_blue_diffuse = loadTexture(FileSystem::getPath("resources/textures/blue.jpg").c_str());
 	tex_blue_specular = loadTexture(FileSystem::getPath("resources/textures/blue_specular.jpg").c_str());
-
-
-
 	
-	//shader configuration -------------------------------------------------------------------------------------------
+	// Shader configuration 
 	lighting_shader.use();
 	lighting_shader.setInt("material.diffuse", 0);
 	lighting_shader.setInt("material.specular", 1);
 
-	// pass projection matrix to shader (as projection matrix rarely changes there's no need to do this per frame)
-	// -----------------------------------------------------------------------------------------------------------
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f);
+	// Pass projection matrix to shader 
+	// (as projection matrix rarely changes there's no need to do this per frame)
+	glm::mat4 projection = glm::perspective(
+		glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f
+	);
 	lighting_shader.setMat4("projection", projection);
 
-
-
-	// render loop
-	// -----------
+	// Render Loop
 	while (!glfwWindowShouldClose(window))
 	{
-		// per-frame time logic
-		// --------------------
+		// Per-frame time logic
 		float currentFrame = glfwGetTime();
 		delta_time = currentFrame - last_frame;
 		last_frame = currentFrame;
 
-		//update delay countdown
+		// Update delay countdown
 		update_delay();
 
-		// input
-		// -----
+		// Input
 		process_input(window);
 
-		// render
-		// ------
+		// Render
 		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
 
 
-		// activate shader
+		// Activate shader
 		lighting_shader.use();
 		lighting_shader.setVec3("light.position", light_pos);
-        	lighting_shader.setVec3("viewPos", camera_pos);
+        lighting_shader.setVec3("viewPos", cam.getPosition());
 
-		// light properties
+		// Light properties
 		lighting_shader.setVec3("light.ambient", 0.1f, 0.1f, 0.1f);
 
 		if(BUTTON_PRESSED == true)
@@ -297,44 +276,32 @@ int main()
 			lighting_shader.setVec3("light.specular", 0.0f, 0.0f, 0.0f);
 		}
 
-		// material properties
-        	lighting_shader.setFloat("material.shininess", 65.0f);
-		// for now just set the same for every object. But, you can make it dynamic for various objects.
+		// Material properties
+        lighting_shader.setFloat("material.shininess", 65.0f);
+		// for now set the same for every object. But, you can make it dynamic for various obj.
 
-
-		// camera/view transformation
-		glm::mat4 view = glm::lookAt(camera_pos, camera_pos + camera_front, camera_up);
+		// Camera/view transformation
+		glm::mat4 view = glm::lookAt(
+			cam.getPosition(), cam.getPosition() + cam.getFront(), cam.getUp()
+		);
 		lighting_shader.setMat4("view", view);
 
-		//declare transformation matrix
+		// Declare transformation matrix
 		glm::mat4 model = glm::mat4();
-		/*
-		//example (remember, it is in column matrix position, so the order is reversed.)
-		model = glm::translate(model, glm::vec3(1.0f, 2.0f, 3.0f)); 			// translate by (1.0, 2.0, 3.0)
-		model = glm::scale(model, glm::vec3(2.0f, 5.0f, 3.0f)); 			// scale by (2.0, 5.0, 3.0) on X, Y, and Z respectively.
-		model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));	// rotate 45 degree about Y-axis (0,1,0)
-		*/
 
-
-
-
-		//Draw objects
-		//------------------------------------------------------------------------------------------
-
+		// Draw objects
+		// --------------------------------------------------------------------------------------
 
 		//Coordinate System
 		if(SHOW_COORDINATE == true)
-		{
-			
+		{	
 			glm::vec3 coord_scales[] = {
 				glm::vec3( 100.0f,  0.02f,  0.02f),	//X
 				glm::vec3( 0.02f,  100.0f,  0.02f),	//Y
 				glm::vec3( 0.02f,  0.02f,  100.0f),	//Z
 			};
 
-			glBindVertexArray(VAO_box);
-
-			
+			glBindVertexArray(VAO_box);	
 			
 			for(int tab = 0; tab < 3; tab++)
 			{	
@@ -369,7 +336,6 @@ int main()
 			}
 		}
 
-
 		//Street
 		glBindVertexArray(VAO_box);
 
@@ -379,12 +345,11 @@ int main()
 		glBindTexture(GL_TEXTURE_2D, tex_street_specular);
 
 		model = glm::mat4();
-		model = glm::scale(model, glm::vec3(3.0f, 0.001f, 7.0f));
+		model = glm::scale(model, glm::vec3(10.0f, 0.001f, 70.0f));
 
 		lighting_shader.setMat4("model", model);
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
-
 
 		//Grass
 		glBindVertexArray(VAO_box);
@@ -396,12 +361,11 @@ int main()
 
 		model = glm::mat4();
 		model = glm::translate(model, glm::vec3(0.0f, -0.01f, 0.0f));
-		model = glm::scale(model, glm::vec3(7.0f, 0.001f, 7.0f));
+		model = glm::scale(model, glm::vec3(70.0f, 0.001f, 70.0f));
 
 		lighting_shader.setMat4("model", model);
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
-
 
 		//Table (4 tall boxes for legs & 1 thin box as table top)
 		glm::vec3 table_scales[] = {
@@ -438,18 +402,17 @@ int main()
 			glDrawArrays(GL_TRIANGLES, 0, 36);
 		}
 
-
-		//Button on table (1 big box & 1 small box as button)
+		// Button on table (1 big box & 1 small box as button)
 		glm::vec3 button_scales[] = {
-			glm::vec3( 0.2f,  0.12f,  0.2f),		//case
-			glm::vec3( 0.12f,  0.12f,  0.12f),		//button
+			glm::vec3( 0.2f,  0.12f,  0.2f),	//case
+			glm::vec3( 0.12f,  0.12f,  0.12f),	//button
 		};
 
 		float red_button_height = 0.05f;
 		if(BUTTON_PRESSED == true) {red_button_height -= 0.02f;}
 
 		glm::vec3 button_positions[] = {
-			glm::vec3( 0.0f,  0.0f,  0.0f),			//case
+			glm::vec3( 0.0f,  0.0f,  0.0f),					//case
 			glm::vec3( 0.0f,  red_button_height,  0.0f),	//button
 		};
 
@@ -470,14 +433,14 @@ int main()
 			}
 			else
 			{
-				if(BUTTON_PRESSED == false) 	// Not Pressed
+				if(BUTTON_PRESSED == false) // Not Pressed
 				{
 					glActiveTexture(GL_TEXTURE0);
 					glBindTexture(GL_TEXTURE_2D, tex_red_dark_diffuse);
 					glActiveTexture(GL_TEXTURE1);
 					glBindTexture(GL_TEXTURE_2D, tex_red_dark_specular);
 				}
-				else				// Pressed
+				else // Pressed
 				{
 					glActiveTexture(GL_TEXTURE0);
 					glBindTexture(GL_TEXTURE_2D, tex_red_bright_diffuse);
@@ -497,9 +460,7 @@ int main()
 			glDrawArrays(GL_TRIANGLES, 0, 36);
 		}
 
-
-
-		//Curtin Logo
+		// Curtin Logo
 		glBindVertexArray(VAO_box);
 
 		glActiveTexture(GL_TEXTURE0);
@@ -507,7 +468,7 @@ int main()
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, tex_curtin_specular);
 
-		//transformation for animation
+		// Transformation for animation
 		if(BUTTON_PRESSED == true)
 		{
 			curtin_translate_y += 1.0f;
@@ -517,7 +478,10 @@ int main()
 		}
 
 		model = glm::mat4();
-		model = glm::translate(model, glm::vec3(0.0f, 0.9f + (0.1f * sin(curtin_translate_y * PI / 180.f)), -0.35f));
+		model = glm::translate(
+			model, 
+			glm::vec3(0.0f, 0.9f + (0.1f * sin(curtin_translate_y * PI / 180.f)), -0.35f)	
+		);
 		model = glm::rotate(model, glm::radians(curtin_rotate_y), glm::vec3(0.0f, 1.0f, 0.0f));
 		model = glm::scale(model, glm::vec3(0.2f, 0.2f, 0.001f));
 
@@ -525,17 +489,14 @@ int main()
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 
-
-
 		// Draw the light source
-		lamp_shader.use();
+		lamp_shader.use(); 
 		lamp_shader.setMat4("projection", projection);
 		lamp_shader.setMat4("view", view);
 		model = glm::mat4();
 		model = glm::translate(model, light_pos);
 		model = glm::scale(model, glm::vec3(0.01f)); // a smaller cube
 		lamp_shader.setMat4("model", model);
-
 		
 		if(BUTTON_PRESSED == true) lamp_shader.setFloat("intensity", 1.0);
 		else lamp_shader.setFloat("intensity", 0.3);
@@ -545,58 +506,57 @@ int main()
 
 
 
-
-
-
-
-
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-		// -------------------------------------------------------------------------------
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
-	// optional: de-allocate all resources once they've outlived their purpose:
-	// ------------------------------------------------------------------------
+	// De-allocate all resources once they've outlived their purpose:
 	glDeleteVertexArrays(1, &VAO_box);
 	glDeleteBuffers(1, &VBO_box);
 
 	// glfw: terminate, clearing all previously allocated GLFW resources.
-	// ------------------------------------------------------------------
 	glfwTerminate();
 	return 0;
 }
 
 
 
-// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
-// ---------------------------------------------------------------------------------------------------------
+// process all input: query GLFW whether relevant keys are pressed/released this frame and 
+// react accordingly.
+// ---------------------------------------------------------------------------------------
 void process_input(GLFWwindow *window)
 {
-    	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        	glfwSetWindowShouldClose(window, true);
+	// Exit
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) 
+	{
+		glfwSetWindowShouldClose(window, true);
+	}
 
 	float cameraSpeed;
-
 	if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_RELEASE)
 		cameraSpeed = 2.5 * delta_time; 
 	else
 		cameraSpeed = 2.5 * delta_time * 2;	// double speed with "Shift" pressed
 
-
-	//move around
+	// Move around
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-		camera_pos += cameraSpeed * player_front;
+		cam.setPosition(cam.getPosition() + cameraSpeed * player.getFront());
+		player.setPosition(player.getPosition() + cameraSpeed * player.getFront());
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-		camera_pos -= cameraSpeed * player_front;
+		cam.setPosition(cam.getPosition() - cameraSpeed * player.getFront());
+		player.setPosition(player.getPosition() - cameraSpeed * player.getFront());
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-		camera_pos -= camera_right * cameraSpeed;
+		cam.setPosition(cam.getPosition() - cam.getRight() * cameraSpeed);
+		player.setPosition(player.getPosition() - cam.getRight() * cameraSpeed);
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-		camera_pos += camera_right * cameraSpeed;
+		cam.setPosition(cam.getPosition() + cam.getRight() * cameraSpeed);
+		player.setPosition(player.getPosition() + cam.getRight() * cameraSpeed);
 
-
-	//toggle red button
-	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && BUTTON_DELAY == 0 && BUTTON_CLOSE_ENOUGH == true)
+	// Toggle red button
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && 
+		BUTTON_DELAY == 0 && 
+		BUTTON_CLOSE_ENOUGH == true)
 	{
 		BUTTON_DELAY = 20;
 		if(BUTTON_PRESSED == false) 		
@@ -605,7 +565,7 @@ void process_input(GLFWwindow *window)
 			BUTTON_PRESSED = false;
 	}
 
-	//toggle coordinate visibility
+	// Toggle coordinate visibility
 	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && SHOW_DELAY == 0)
 	{
 		SHOW_DELAY = 20;
@@ -616,51 +576,12 @@ void process_input(GLFWwindow *window)
 	}
 }
 
-// 
+// What to do when the mouse moves 
 // ---------------------------------------------------------------------------------------------
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
-	if (firstMouse)
-	{
-		lastX = xpos;
-		lastY = ypos;
-		firstMouse = false;
-	}
-
-	//update coordinates
-	float xoffset = xpos - lastX;
-	float yoffset = lastY - ypos;
-	lastX = xpos;
-	lastY = ypos;
-
-	//sensitivity
-	xoffset *= sensitivity;
-	yoffset *= sensitivity;
-
-	//modify camera angle
-	yaw += xoffset;
-	pitch += yoffset;
-
-	//constraints -- ensure we don't flip the direction vector
-	if (pitch > 89.0f) 
-	{
-		pitch = 89.0f;
-	}
-	else if (pitch < -89.0f)
-	{
-		pitch = -89.0f;
-	}
-
-	//calculate the actual direction vector -- where we're pointing
-	glm::vec3 direction;
-	direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-	direction.y = sin(glm::radians(pitch));
-	direction.z	= sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-	camera_front = glm::normalize(direction);
-
-	//recalculate right and player front
-	camera_right = glm::normalize(glm::cross(camera_front, camera_up));
-	player_front = glm::vec3(camera_front.x, 0.0, camera_front.z);
+	cam.mouseMoved(xpos, ypos); // update camera
+	player.setFront(glm::vec3(cam.getFront().x, 0.0, cam.getFront().z));
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
@@ -710,13 +631,4 @@ unsigned int loadTexture(char const * path)
 	}
 
 	return textureID;
-}
-
-bool checkCollision(glm::vec3 pos1, glm::vec3 pos2) 
-{
-	bool colX = pos1.x + 1 >= pos2.x && pos2.x + 1 >= pos1.x;
-	bool colY = pos1.y + 1 >= pos2.y && pos2.y + 1 >= pos1.y;
-	bool colZ = pos1.z + 1 >= pos2.z && pos2.z + 1 >= pos1.z;
-
-	return colX && colY && colZ;
 }
