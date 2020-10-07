@@ -1,5 +1,7 @@
 #include <glm/glm.hpp>
-#include <GLFW/glfw3.h> 
+#include <GLFW/glfw3.h>
+
+#include <learnopengl/shader_m.h> 
 
 // Constants
 static const glm::vec3 	ORIGIN 				= glm::vec3(0.0f, 0.0f, 0.0f);
@@ -15,6 +17,10 @@ protected:
 
 	// Fields
 	glm::vec3 ePos, eDir, eFront, eUp, eRight;
+	std::list<glm::mat4> model;
+	unsigned int *textures;
+	int numTextures;
+	bool solid;
 	
 	// Helpers
 	glm::vec3 calcDirection() 
@@ -36,6 +42,11 @@ public:
 		eUp = inUp;
 		eDir = calcDirection();
 		eRight = calcRight();
+
+		model = std::list<glm::mat4>();
+		textures = NULL; //todo
+
+		solid = false;
 	}
 
 	// Getters
@@ -44,6 +55,8 @@ public:
 	glm::vec3 getFront() { return eFront; }
 	glm::vec3 getUp() { return eUp; }
 	glm::vec3 getRight() { return eRight; }
+	std::list<glm::mat4> getModel() { return model; }
+	bool isSolid() { return solid; }
 
 	// Setters	
 	void setPosition(glm::vec3 inPos)
@@ -59,12 +72,61 @@ public:
 	{
 		eUp = inUp;
 		eRight = calcRight();
-	}	
+	}
+
+	// scales[]    : size of the model
+	// positions[] : position in the space, with respect to ORIGIN
+	void setModel(glm::vec3 scales[], glm::vec3 positions[], int arrSize)
+	{
+		// Erase previous model
+		model = std::list<glm::mat4>();
+
+		// Construct the model(s)
+		glm::mat4 currModel;
+		for (int ii = 0; ii < arrSize; ii++)
+		{
+			currModel = glm::mat4();
+			currModel = glm::translate(currModel, positions[ii]+ePos); // move to entity position
+			currModel = glm::scale(currModel, scales[ii]); // scale
+			currModel = glm::translate(currModel, glm::vec3(0.0f, 0.5f, 0.0f)); // ??
+			model.push_back(currModel);
+		}
+	}
+	void setTextures(unsigned int *inTextures, int numT)
+	{
+		textures = inTextures;
+		numTextures = numT;
+	}
+	void setSolid(bool b)
+	{
+		solid = b;
+	}
+	void render(unsigned int VAO_box, Shader lighting_shader)
+	{
+		glBindVertexArray(VAO_box);
+
+		unsigned int glTex[] = {GL_TEXTURE0, GL_TEXTURE1};
+		
+		for (int ii = 0; ii < numTextures; ii++)
+		{
+			glActiveTexture(glTex[ii]);
+			glBindTexture(GL_TEXTURE_2D, textures[ii]);
+		}
+
+		std::list<glm::mat4>::iterator it = model.begin();
+		for (int ii = 0; ii < model.size(); ii++)
+		{
+			lighting_shader.setMat4("model", *it);
+			glDrawArrays(GL_TRIANGLES, 0, 36);
+			std::advance(it, 1);
+		}	
+	}
 };
 
 // Description of the player camera
 class Camera : public Entity
 {
+
 private:
 	
 	// Fields
@@ -126,5 +188,23 @@ public:
 		direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
 		eFront = glm::normalize(direction); 
 		eRight = glm::normalize(glm::cross(eFront, eUp));
+	}
+};
+
+class Pickup : public Entity
+{
+
+private:
+
+	// Fields
+	bool animating;
+
+public:
+
+	// Constructor
+	Pickup(glm::vec3 pPos, glm::vec3 pFront, glm::vec3 pUp) 
+	: Entity(pPos, pFront, pUp)
+	{
+		animating = true;
 	}
 };

@@ -12,9 +12,12 @@
 #include <iostream>
 #include <string>
 
-#include "entity.hpp"
+#include "world.hpp"
 
 #define PI 3.14159265
+
+// Constants
+const char* GAME_TITLE = "Escape Game";
 
 // Box coordinate with 36 vertices.
 // Every 3 coordinates will form 1 triangle.
@@ -69,10 +72,37 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow *window);
 unsigned int loadTexture(char const * path);
+bool collisionAt(glm::vec3 position); 
 
 // Screen
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 800;
+
+// World
+const float WORLD_WIDTH = 70.0f;
+const float WORLD_LENGTH = 70.0f;
+
+// Table 2
+Entity table2 = Entity(
+	glm::vec3(10.0f, 0.0f, 10.0f), 	// Position
+	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
+	glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
+);
+
+glm::vec3 table2_scales[] = {
+	glm::vec3( 1.0f,  0.1f,  1.0f),		//top
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//near left
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//near right
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//far left
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//far right
+};
+glm::vec3 table2_positions[] = {
+	glm::vec3( 0.0f,  0.5f,  0.0f),		//top
+	glm::vec3(-0.45f, 0.0f,  0.45f),	//near left
+	glm::vec3( 0.45f, 0.0f,  0.45f),	//near right
+	glm::vec3(-0.45f, 0.0f, -0.45f),	//far left
+	glm::vec3( 0.45f, 0.0f, -0.45f),	//far right
+};
 
 // Camera
 Camera cam = Camera(
@@ -136,7 +166,7 @@ int main()
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);	
 
 	// glfw window creation
-	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Escape Game", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, GAME_TITLE, NULL, NULL);
 	if (window == NULL)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
@@ -165,7 +195,7 @@ int main()
 	// Build and compile our shader zprogram
 	Shader lighting_shader("./sample2.vs", "./sample2.fs");
 	Shader lamp_shader("./lamp.vs", "./lamp.fs");
-
+	
 	// Set up vertex data (and buffer(s)) and configure vertex attributes
 	unsigned int VBO_box, VAO_box;
 
@@ -225,6 +255,12 @@ int main()
 	tex_green_specular = loadTexture(FileSystem::getPath("resources/textures/green_specular.jpg").c_str());
 	tex_blue_diffuse = loadTexture(FileSystem::getPath("resources/textures/blue.jpg").c_str());
 	tex_blue_specular = loadTexture(FileSystem::getPath("resources/textures/blue_specular.jpg").c_str());
+
+	// TABLE 2 (TEMP)
+	table2 = Entity(glm::vec3(10.0f, 0.0f, 10.0f), player.getFront(), player.getUp());
+	table2.setModel(table2_scales, table2_positions, 5);
+	unsigned int tex[] = {tex_wood_diffuse, tex_wood_specular};
+	table2.setTextures(tex, 2);
 	
 	// Shader configuration 
 	lighting_shader.use();
@@ -345,7 +381,7 @@ int main()
 		glBindTexture(GL_TEXTURE_2D, tex_street_specular);
 
 		model = glm::mat4();
-		model = glm::scale(model, glm::vec3(10.0f, 0.001f, 70.0f));
+		model = glm::scale(model, glm::vec3(10.0f, 0.001f, WORLD_LENGTH));
 
 		lighting_shader.setMat4("model", model);
 
@@ -361,12 +397,55 @@ int main()
 
 		model = glm::mat4();
 		model = glm::translate(model, glm::vec3(0.0f, -0.01f, 0.0f));
-		model = glm::scale(model, glm::vec3(70.0f, 0.001f, 70.0f));
+		model = glm::scale(model, glm::vec3(WORLD_WIDTH, 0.001f, WORLD_LENGTH));
 
 		lighting_shader.setMat4("model", model);
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 
+		//Walls
+		glm::vec3 wall_scales[] = {
+			glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
+			glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
+			glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
+			glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
+		};
+		glm::vec3 wall_positions[] = {
+			glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
+			glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
+			glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
+			glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
+		};
+	
+		glBindVertexArray(VAO_box);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, tex_wood_diffuse);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, tex_wood_specular);
+
+		for(int tab = 0; tab < 4; tab++)
+		{	
+			model = glm::mat4();
+			model = glm::translate(model, wall_positions[tab]);
+			model = glm::scale(model, wall_scales[tab]);
+			model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
+
+			lighting_shader.setMat4("model", model);
+
+			glDrawArrays(GL_TRIANGLES, 0, 36);
+		}
+
+		// TEST TEMP THING
+
+		table2.render(VAO_box, lighting_shader);
+	
+		// END TEST
+
+
+
+		/*
+		
 		//Table (4 tall boxes for legs & 1 thin box as table top)
 		glm::vec3 table_scales[] = {
 			glm::vec3( 1.0f,  0.1f,  1.0f),	//top
@@ -401,6 +480,8 @@ int main()
 
 			glDrawArrays(GL_TRIANGLES, 0, 36);
 		}
+
+		*/
 
 		// Button on table (1 big box & 1 small box as button)
 		glm::vec3 button_scales[] = {
@@ -471,8 +552,8 @@ int main()
 		// Transformation for animation
 		if(BUTTON_PRESSED == true)
 		{
-			curtin_translate_y += 1.0f;
-			curtin_rotate_y += 1.0f;
+			curtin_translate_y += 6.0f;
+			curtin_rotate_y += 6.0f;
 			if(abs(curtin_translate_y - 360.0f) <= 0.1f) curtin_translate_y = 0.0f;
 			if(abs(curtin_rotate_y - 360.0f) <= 0.1f) curtin_rotate_y = 0.0f;
 		}
@@ -540,18 +621,27 @@ void process_input(GLFWwindow *window)
 		cameraSpeed = 2.5 * delta_time * 2;	// double speed with "Shift" pressed
 
 	// Move around
-	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+	glm::vec3 newPos;
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && 
+	    !collisionAt(cam.getPosition() + cameraSpeed * player.getFront())) {
 		cam.setPosition(cam.getPosition() + cameraSpeed * player.getFront());
-		player.setPosition(player.getPosition() + cameraSpeed * player.getFront());
-	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+		player.setPosition(cam.getPosition() + cameraSpeed * player.getFront());
+	}
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS &&
+		!collisionAt(cam.getPosition() - cameraSpeed * player.getFront())) {
 		cam.setPosition(cam.getPosition() - cameraSpeed * player.getFront());
 		player.setPosition(player.getPosition() - cameraSpeed * player.getFront());
-	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+	}
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && 
+		!collisionAt(cam.getPosition() - cam.getRight() * cameraSpeed)) {
 		cam.setPosition(cam.getPosition() - cam.getRight() * cameraSpeed);
 		player.setPosition(player.getPosition() - cam.getRight() * cameraSpeed);
-	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+	}
+	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && 
+		!collisionAt(cam.getPosition() + cam.getRight() * cameraSpeed)) {
 		cam.setPosition(cam.getPosition() + cam.getRight() * cameraSpeed);
 		player.setPosition(player.getPosition() + cam.getRight() * cameraSpeed);
+	}
 
 	// Toggle red button
 	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && 
@@ -631,4 +721,14 @@ unsigned int loadTexture(char const * path)
 	}
 
 	return textureID;
+}
+
+bool collisionAt(glm::vec3 position) 
+{
+	bool colX = position.x >= WORLD_WIDTH/2 || position.x <= -(WORLD_WIDTH/2);
+	bool colZ = position.z >= WORLD_LENGTH/2 || position.z <= -(WORLD_LENGTH/2);
+ 	//std::cout << position.x << "  " << colX << std::endl;
+ 	//std::cout << position.z << "  " << colZ << std::endl << std::endl;
+
+	return colX || colZ;
 }
