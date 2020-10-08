@@ -1,10 +1,10 @@
 #include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
+#include <list>
 
 #include <learnopengl/shader_m.h> 
 
 // Constants
-static const glm::vec3 	ORIGIN 				= glm::vec3(0.0f, 0.0f, 0.0f);
 static const float 		YAW_DEFAULT 		= -90.0f;
 static const float 		PITCH_DEFAULT 		= 0.0f;
 static const float 		SENSITIVITY_DEFAULT = 0.05f;
@@ -25,7 +25,7 @@ protected:
 	// Helpers
 	glm::vec3 calcDirection() 
 	{
-		return glm::normalize(ePos - ORIGIN);
+		return glm::normalize(ePos - glm::vec3(0.0f, 0.0f, 0.0f));
 	}
 	glm::vec3 calcRight()
 	{
@@ -114,12 +114,12 @@ public:
 		}
 
 		std::list<glm::mat4>::iterator it = model.begin();
-		for (int ii = 0; ii < model.size(); ii++)
+		for (int ii = 0; ii < (int)(model.size()); ii++)
 		{
 			lighting_shader.setMat4("model", *it);
 			glDrawArrays(GL_TRIANGLES, 0, 36);
 			std::advance(it, 1);
-		}	
+		}
 	}
 };
 

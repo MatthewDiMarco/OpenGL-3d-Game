@@ -12,7 +12,7 @@
 #include <iostream>
 #include <string>
 
-#include "world.hpp"
+#include "entity.hpp"
 
 #define PI 3.14159265
 
@@ -72,37 +72,40 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow *window);
 unsigned int loadTexture(char const * path);
-bool collisionAt(glm::vec3 position); 
+bool collisionAt(glm::vec3 position);
+void addEntity(Entity e, bool solid); 
+void addEntity(
+	Entity e, 
+	glm::vec3 scales[], glm::vec3 positions[], int numModel,
+	unsigned int textures[], int numTextures, bool solid);
+void init(unsigned int textures_wall[]);
+void render(unsigned int VAO_box, Shader lighting_shader);
 
 // Screen
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 800;
 
 // World
-const float WORLD_WIDTH = 70.0f;
-const float WORLD_LENGTH = 70.0f;
+static const float WORLD_WIDTH = 70.0f;
+static const float WORLD_LENGTH = 70.0f;
+static const glm::vec3 UP = glm::vec3(0.0f, 1.0f, 0.0f);
+static const glm::vec3 NORTH = glm::vec3(0.0f, 0.0f, -1.0f);
+static const glm::vec3 ORIGIN = glm::vec3(0.0f, 0.0f, 0.0f);
+std::list<Entity> entities;
 
-// Table 2
-Entity table2 = Entity(
-	glm::vec3(10.0f, 0.0f, 10.0f), 	// Position
-	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
-	glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
+// Walls
+Entity walls = Entity(
+	glm::vec3(0.0f, 0.0f, 0.0f), 
+	glm::vec3(0.0f, 0.0f, -1.0f),
+	glm::vec3(0.0f, 1.0f, 0.0f)
 );
 
-glm::vec3 table2_scales[] = {
-	glm::vec3( 1.0f,  0.1f,  1.0f),		//top
-	glm::vec3( 0.1f,  0.5f,  0.1f),		//near left
-	glm::vec3( 0.1f,  0.5f,  0.1f),		//near right
-	glm::vec3( 0.1f,  0.5f,  0.1f),		//far left
-	glm::vec3( 0.1f,  0.5f,  0.1f),		//far right
-};
-glm::vec3 table2_positions[] = {
-	glm::vec3( 0.0f,  0.5f,  0.0f),		//top
-	glm::vec3(-0.45f, 0.0f,  0.45f),	//near left
-	glm::vec3( 0.45f, 0.0f,  0.45f),	//near right
-	glm::vec3(-0.45f, 0.0f, -0.45f),	//far left
-	glm::vec3( 0.45f, 0.0f, -0.45f),	//far right
-};
+// Temp Entity
+Entity table2 = Entity(
+	glm::vec3(10.0f, 0.0f, 10.0f), 
+	glm::vec3(0.0f, 0.0f, -1.0f),
+	glm::vec3(0.0f, 1.0f, 0.0f)
+);
 
 // Camera
 Camera cam = Camera(
@@ -131,7 +134,6 @@ bool BUTTON_PRESSED = false;
 int BUTTON_DELAY = 0;
 bool BUTTON_CLOSE_ENOUGH = false;
 
-bool SHOW_COORDINATE = false;
 int SHOW_DELAY = 0;
 
 // Animation Variables
@@ -230,9 +232,8 @@ int main()
 	// Load and create a texture 
 	unsigned int tex_wood_diffuse, tex_street_diffuse, tex_grass_diffuse, tex_marble_diffuse, tex_curtin_diffuse;
 	unsigned int tex_wood_specular, tex_street_specular, tex_grass_specular, tex_marble_specular, tex_curtin_specular;
-
-	unsigned int tex_red_dark_diffuse, tex_red_bright_diffuse, tex_red_diffuse, tex_green_diffuse, tex_blue_diffuse;
-	unsigned int tex_red_dark_specular, tex_red_bright_specular, tex_red_specular, tex_green_specular, tex_blue_specular;
+	unsigned int tex_red_dark_diffuse, tex_red_bright_diffuse;
+	unsigned int tex_red_dark_specular, tex_red_bright_specular;
 
 	tex_wood_diffuse = loadTexture(FileSystem::getPath("resources/textures/wood2.jpg").c_str());
 	tex_wood_specular = loadTexture(FileSystem::getPath("resources/textures/wood2_specular.jpg").c_str());
@@ -249,18 +250,33 @@ int main()
 	tex_red_dark_specular = loadTexture(FileSystem::getPath("resources/textures/red_dark_specular.jpg").c_str());
 	tex_red_bright_diffuse = loadTexture(FileSystem::getPath("resources/textures/red_bright.jpg").c_str());
 	tex_red_bright_specular = loadTexture(FileSystem::getPath("resources/textures/red_bright_specular.jpg").c_str());
-	tex_red_diffuse = loadTexture(FileSystem::getPath("resources/textures/red.jpg").c_str());
-	tex_red_specular = loadTexture(FileSystem::getPath("resources/textures/red_specular.jpg").c_str());
-	tex_green_diffuse = loadTexture(FileSystem::getPath("resources/textures/green.jpg").c_str());
-	tex_green_specular = loadTexture(FileSystem::getPath("resources/textures/green_specular.jpg").c_str());
-	tex_blue_diffuse = loadTexture(FileSystem::getPath("resources/textures/blue.jpg").c_str());
-	tex_blue_specular = loadTexture(FileSystem::getPath("resources/textures/blue_specular.jpg").c_str());
 
-	// TABLE 2 (TEMP)
-	table2 = Entity(glm::vec3(10.0f, 0.0f, 10.0f), player.getFront(), player.getUp());
+	// Initialise WORLD and ENTITIES
+	// ------------------------------------------------------------------------------------------
+
+	entities = std::list<Entity>();
+	
+	unsigned int wall_tex[] = {tex_wood_diffuse, tex_wood_specular};
+	init(wall_tex);
+
+	// TABLE 2 EXAMPLE
+	glm::vec3 table2_scales[] = {
+		glm::vec3( 1.0f,  0.1f,  1.0f),		//top
+		glm::vec3( 0.1f,  0.5f,  0.1f),		//near left
+		glm::vec3( 0.1f,  0.5f,  0.1f),		//near right
+		glm::vec3( 0.1f,  0.5f,  0.1f),		//far left
+		glm::vec3( 0.1f,  0.5f,  0.1f),		//far right
+	};
+	glm::vec3 table2_positions[] = {
+		glm::vec3( 0.0f,  0.5f,  0.0f),		//top
+		glm::vec3(-0.45f, 0.0f,  0.45f),	//near left
+		glm::vec3( 0.45f, 0.0f,  0.45f),	//near right
+		glm::vec3(-0.45f, 0.0f, -0.45f),	//far left
+		glm::vec3( 0.45f, 0.0f, -0.45f),	//far right
+	};
 	table2.setModel(table2_scales, table2_positions, 5);
-	unsigned int tex[] = {tex_wood_diffuse, tex_wood_specular};
-	table2.setTextures(tex, 2);
+	table2.setTextures(wall_tex, 2);
+	addEntity(table2, true);
 	
 	// Shader configuration 
 	lighting_shader.use();
@@ -291,7 +307,6 @@ int main()
 		// Render
 		glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
-
 
 		// Activate shader
 		lighting_shader.use();
@@ -327,51 +342,7 @@ int main()
 
 		// Draw objects
 		// --------------------------------------------------------------------------------------
-
-		//Coordinate System
-		if(SHOW_COORDINATE == true)
-		{	
-			glm::vec3 coord_scales[] = {
-				glm::vec3( 100.0f,  0.02f,  0.02f),	//X
-				glm::vec3( 0.02f,  100.0f,  0.02f),	//Y
-				glm::vec3( 0.02f,  0.02f,  100.0f),	//Z
-			};
-
-			glBindVertexArray(VAO_box);	
-			
-			for(int tab = 0; tab < 3; tab++)
-			{	
-				if(tab == 0) // X
-				{
-					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, tex_red_diffuse);
-					glActiveTexture(GL_TEXTURE1);
-					glBindTexture(GL_TEXTURE_2D, tex_red_specular);
-				}
-				if(tab == 1) // Y
-				{
-					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, tex_green_diffuse);
-					glActiveTexture(GL_TEXTURE1);
-					glBindTexture(GL_TEXTURE_2D, tex_green_specular);
-				}
-				if(tab == 2) // Z
-				{
-					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, tex_blue_diffuse);
-					glActiveTexture(GL_TEXTURE1);
-					glBindTexture(GL_TEXTURE_2D, tex_blue_specular);
-				}
-
-				model = glm::mat4();
-				model = glm::scale(model, coord_scales[tab]);
-
-				lighting_shader.setMat4("model", model);
-
-				glDrawArrays(GL_TRIANGLES, 0, 36);
-			}
-		}
-
+	
 		//Street
 		glBindVertexArray(VAO_box);
 
@@ -402,87 +373,15 @@ int main()
 		lighting_shader.setMat4("model", model);
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
-
-		//Walls
-		glm::vec3 wall_scales[] = {
-			glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
-			glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
-			glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
-			glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
-		};
-		glm::vec3 wall_positions[] = {
-			glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
-			glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
-			glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
-			glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
-		};
-	
-		glBindVertexArray(VAO_box);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, tex_wood_diffuse);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, tex_wood_specular);
-
-		for(int tab = 0; tab < 4; tab++)
-		{	
-			model = glm::mat4();
-			model = glm::translate(model, wall_positions[tab]);
-			model = glm::scale(model, wall_scales[tab]);
-			model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
-
-			lighting_shader.setMat4("model", model);
-
-			glDrawArrays(GL_TRIANGLES, 0, 36);
-		}
-
-		// TEST TEMP THING
-
-		table2.render(VAO_box, lighting_shader);
-	
-		// END TEST
-
-
-
-		/*
 		
-		//Table (4 tall boxes for legs & 1 thin box as table top)
-		glm::vec3 table_scales[] = {
-			glm::vec3( 1.0f,  0.1f,  1.0f),	//top
-			glm::vec3( 0.1f,  0.5f,  0.1f),//near left
-			glm::vec3( 0.1f,  0.5f,  0.1f),	//near right
-			glm::vec3( 0.1f,  0.5f,  0.1f),//far left
-			glm::vec3( 0.1f,  0.5f,  0.1f),	//far right
-		};
-		glm::vec3 table_positions[] = {
-			glm::vec3( 0.0f,  0.5f,  0.0f),		//top
-			glm::vec3(-0.45f, 0.0f,  0.45f),	//near left
-			glm::vec3( 0.45f, 0.0f,  0.45f),	//near right
-			glm::vec3(-0.45f, 0.0f, -0.45f),	//far left
-			glm::vec3( 0.45f, 0.0f, -0.45f),	//far right
-		};
-
-		glBindVertexArray(VAO_box);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, tex_wood_diffuse);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, tex_wood_specular);
-
-		for(int tab = 0; tab < 5; tab++)
-		{	
-			model = glm::mat4();
-			model = glm::translate(model, table_positions[tab]);
-			model = glm::scale(model, table_scales[tab]);
-			model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
-
-			lighting_shader.setMat4("model", model);
-
-			glDrawArrays(GL_TRIANGLES, 0, 36);
+		// Render the entities
+		std::list<Entity>::iterator it = entities.begin();
+		for (int ii = 0; ii < (entities.size()); ii++)
+		{
+			((Entity)(*it)).render(VAO_box, lighting_shader);
+			std::advance(it, 1);
 		}
-
-		*/
-
+	
 		// Button on table (1 big box & 1 small box as button)
 		glm::vec3 button_scales[] = {
 			glm::vec3( 0.2f,  0.12f,  0.2f),	//case
@@ -601,8 +500,6 @@ int main()
 	return 0;
 }
 
-
-
 // process all input: query GLFW whether relevant keys are pressed/released this frame and 
 // react accordingly.
 // ---------------------------------------------------------------------------------------
@@ -653,17 +550,7 @@ void process_input(GLFWwindow *window)
 			BUTTON_PRESSED = true;
 		else
 			BUTTON_PRESSED = false;
-	}
-
-	// Toggle coordinate visibility
-	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && SHOW_DELAY == 0)
-	{
-		SHOW_DELAY = 20;
-		if(SHOW_COORDINATE == false) 		
-			SHOW_COORDINATE = true;
-		else
-			SHOW_COORDINATE = false;
-	}
+	}	
 }
 
 // What to do when the mouse moves 
@@ -691,7 +578,7 @@ unsigned int loadTexture(char const * path)
 	glGenTextures(1, &textureID);
 
 	int width, height, nrComponents;
-	stbi_set_flip_vertically_on_load(true); // tell stb_image.h to flip loaded texture's on the y-axis.
+	stbi_set_flip_vertically_on_load(true); // stb_image.h to flip loaded texture's on y-axis.
 	unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
 	if (data)
 	{
@@ -723,6 +610,7 @@ unsigned int loadTexture(char const * path)
 	return textureID;
 }
 
+// Collisions
 bool collisionAt(glm::vec3 position) 
 {
 	bool colX = position.x >= WORLD_WIDTH/2 || position.x <= -(WORLD_WIDTH/2);
@@ -731,4 +619,46 @@ bool collisionAt(glm::vec3 position)
  	//std::cout << position.z << "  " << colZ << std::endl << std::endl;
 
 	return colX || colZ;
+}
+
+// Add an entity 
+void addEntity(Entity e, bool solid) 
+{
+	e.setSolid(solid);
+	entities.push_back(e);
+}
+
+// Add an entity and construct it's model
+void addEntity(
+	Entity e, 
+	glm::vec3 scales[], glm::vec3 positions[], int numModel,
+	unsigned int textures[], int numTextures, bool solid)	
+{
+	e.setModel(scales, positions, numModel);
+	e.setTextures(textures, numTextures);
+	e.setSolid(solid);
+	entities.push_back(e);
+}
+
+// Initilaise the world ground, boundaries and basic objects
+void init(unsigned int textures_wall[])
+{
+	//Walls
+	glm::vec3 wall_scales[] = {
+		glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
+		glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
+		glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
+		glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
+	};
+	glm::vec3 wall_positions[] = {
+		glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
+		glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
+		glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
+		glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
+	};
+			
+	// Add the walls to be rendered	
+	walls.setModel(wall_scales, wall_positions, 4);
+	walls.setTextures(textures_wall, 2);
+	addEntity(walls, false);	
 }
