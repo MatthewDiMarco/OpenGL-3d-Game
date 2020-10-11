@@ -14,8 +14,6 @@
 
 #include "entity.hpp"
 
-#define PI 3.14159265
-
 // Constants
 const char* GAME_TITLE = "Escape Game";
 
@@ -73,13 +71,17 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow *window);
 unsigned int loadTexture(char const * path);
 bool collisionAt(glm::vec3 position);
-void addEntity(Entity e, bool solid); 
 void addEntity(
-	Entity e, 
+	Entity* e, 
 	glm::vec3 scales[], glm::vec3 positions[], int numModel,
-	unsigned int textures[], int numTextures, bool solid);
+	unsigned int textures[], int numTextures);
+void addPickup(
+	Pickup* p, 
+	glm::vec3 scales[], glm::vec3 positions[], int numModel,
+	unsigned int textures[], int numTextures);
 void init(unsigned int textures_wall[]);
 void render(unsigned int VAO_box, Shader lighting_shader);
+bool is_close_to(glm::vec3 entity_pos);
 
 // Screen
 const unsigned int SCR_WIDTH = 800;
@@ -91,18 +93,25 @@ static const float WORLD_LENGTH = 70.0f;
 static const glm::vec3 UP = glm::vec3(0.0f, 1.0f, 0.0f);
 static const glm::vec3 NORTH = glm::vec3(0.0f, 0.0f, -1.0f);
 static const glm::vec3 ORIGIN = glm::vec3(0.0f, 0.0f, 0.0f);
-std::list<Entity> entities;
+static const float INTERACT_DISTANCE = 1.6f;
+std::list<Entity*> entities;
+std::list<Pickup*> pickups;
 
 // Walls
+glm::vec3 wall_scales[] = {
+	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
+	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
+	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
+	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
+};
+glm::vec3 wall_positions[] = {
+	glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
+	glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
+	glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
+	glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
+};
 Entity walls = Entity(
 	glm::vec3(0.0f, 0.0f, 0.0f), 
-	glm::vec3(0.0f, 0.0f, -1.0f),
-	glm::vec3(0.0f, 1.0f, 0.0f)
-);
-
-// Temp Entity
-Entity table2 = Entity(
-	glm::vec3(10.0f, 0.0f, 10.0f), 
 	glm::vec3(0.0f, 0.0f, -1.0f),
 	glm::vec3(0.0f, 1.0f, 0.0f)
 );
@@ -122,6 +131,20 @@ Entity player = Entity(
 	glm::vec3(0.0f, 0.0f, -1.0f) 	// track player's front w/o upwards direction of camera
 );
 
+// Torch
+Pickup torch = Pickup(
+	glm::vec3(5.0f, 0.5f, -5.0),
+	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
+	glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
+);
+
+// Table
+Entity table = Entity(
+	glm::vec3(0.0f, 0.0f, 0.0f), 
+	glm::vec3(0.0f, 0.0f, -1.0f),
+	glm::vec3(0.0f, 1.0f, 0.0f)
+);
+
 // lighting
 glm::vec3 light_pos(0.0f, 1.0f, 0.1f);
 
@@ -133,6 +156,8 @@ float last_frame = 0.0f;
 bool BUTTON_PRESSED = false;
 int BUTTON_DELAY = 0;
 bool BUTTON_CLOSE_ENOUGH = false;
+bool INTERACTIVITY_CLOSE_ENOUGH = false;
+int closest_pickup_idx = 0;
 
 int SHOW_DELAY = 0;
 
@@ -151,11 +176,21 @@ void update_delay()
 // Toggle button pressing only if the camera is close enough.
 void toggle_button_distance(glm::vec3 button_pos)
 {
-	if(glm::length(cam.getPosition() - button_pos) <= 1.6f)
+	if(glm::length(cam.getPosition() - button_pos) <= INTERACT_DISTANCE)
 		BUTTON_CLOSE_ENOUGH = true;
 	else
 		BUTTON_CLOSE_ENOUGH = false;
 }
+
+// Close enough to some entity to interact with it?
+bool is_close_to(glm::vec3 entity_pos)
+{
+	if(glm::length(cam.getPosition() - entity_pos) <= INTERACT_DISTANCE)
+		return true;
+	else
+		return false;
+}
+
 
 // Main Algorithm
 // --------------
@@ -254,12 +289,15 @@ int main()
 	// Initialise WORLD and ENTITIES
 	// ------------------------------------------------------------------------------------------
 
-	entities = std::list<Entity>();
+	// Container for entities
+	entities = std::list<Entity*>();
+	pickups = std::list<Pickup*>();
 	
+	// Initialise border
 	unsigned int wall_tex[] = {tex_wood_diffuse, tex_wood_specular};
 	init(wall_tex);
 
-	// TABLE 2 EXAMPLE
+	// Table
 	glm::vec3 table2_scales[] = {
 		glm::vec3( 1.0f,  0.1f,  1.0f),		//top
 		glm::vec3( 0.1f,  0.5f,  0.1f),		//near left
@@ -269,14 +307,45 @@ int main()
 	};
 	glm::vec3 table2_positions[] = {
 		glm::vec3( 0.0f,  0.5f,  0.0f),		//top
-		glm::vec3(-0.45f, 0.0f,  0.45f),	//near left
-		glm::vec3( 0.45f, 0.0f,  0.45f),	//near right
-		glm::vec3(-0.45f, 0.0f, -0.45f),	//far left
-		glm::vec3( 0.45f, 0.0f, -0.45f),	//far right
+		glm::vec3(-0.45f, 0.2f,  0.45f),	//near left
+		glm::vec3( 0.45f, 0.2f,  0.45f),	//near right
+		glm::vec3(-0.45f, 0.2f, -0.45f),	//far left
+		glm::vec3( 0.45f, 0.2f, -0.45f),	//far right
 	};
-	table2.setModel(table2_scales, table2_positions, 5);
-	table2.setTextures(wall_tex, 2);
-	addEntity(table2, true);
+	addEntity(
+		&table, table2_scales, table2_positions, 5, wall_tex, 2
+	);
+
+	// Test pickup
+	unsigned int pickup_tex[] = {tex_curtin_diffuse, tex_curtin_specular};
+	glm::vec3 pickup_scales[] = {
+		glm::vec3( 0.2f,  0.2f,  0.2f)
+	};
+	glm::vec3 pickup_positions[] = {
+		glm::vec3( 0.0f,  0.0f,  0.0f)
+	};
+	Pickup p = Pickup(
+		glm::vec3(0.0f, 0.5f, -5.0f), 
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+	addPickup(
+		&p, pickup_scales, pickup_positions, 1, pickup_tex, 2
+	);
+
+	// Torch
+	unsigned int torch_tex[] = {tex_marble_diffuse, tex_marble_specular};
+	glm::vec3 torch_scales[] = {
+		glm::vec3( 0.04f,  0.06f,  0.06f),
+		glm::vec3( 0.1f,  0.02f,  0.02f)
+	};
+	glm::vec3 torch_positions[] = {
+		glm::vec3( 0.0f,  0.0f,  0.0f), // Torch head
+		glm::vec3( 0.05f,  0.002f,  -0.002f) 	// Handle
+	};
+	addPickup(
+		&torch, torch_scales, torch_positions, 2, torch_tex, 2
+	);
 	
 	// Shader configuration 
 	lighting_shader.use();
@@ -288,6 +357,11 @@ int main()
 	glm::mat4 projection = glm::perspective(
 		glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f
 	);
+	//glm::mat4 projection = glm::ortho(
+		//-((float)SCR_WIDTH / (float)SCR_HEIGHT),
+		//  (float)SCR_WIDTH / (float)SCR_HEIGHT,
+		//-1.0f, 1.0f, -1.0f, 1.0f
+	//);
 	lighting_shader.setMat4("projection", projection);
 
 	// Render Loop
@@ -344,7 +418,7 @@ int main()
 		// --------------------------------------------------------------------------------------
 	
 		//Street
-		glBindVertexArray(VAO_box);
+		glBindVertexArray(VAO_box); 
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, tex_street_diffuse);
@@ -375,11 +449,25 @@ int main()
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 		
 		// Render the entities
-		std::list<Entity>::iterator it = entities.begin();
-		for (int ii = 0; ii < (entities.size()); ii++)
+		std::list<Entity*>::iterator it1 = entities.begin();
+		for (int ii = 0; ii < (int)(entities.size()); ii++)
 		{
-			((Entity)(*it)).render(VAO_box, lighting_shader);
-			std::advance(it, 1);
+			(*it1)->render(VAO_box, lighting_shader);
+			std::advance(it1, 1);
+		}
+
+		// Render the pickups
+		INTERACTIVITY_CLOSE_ENOUGH = false;
+		std::list<Pickup*>::iterator it2 = pickups.begin();
+		for (int ii = 0; ii < (int)(pickups.size()); ii++)
+		{	
+			(*it2)->render(VAO_box, lighting_shader);
+			if (is_close_to((*it2)->getPosition()))
+			{
+				INTERACTIVITY_CLOSE_ENOUGH = true;
+				closest_pickup_idx = ii; 
+			}
+			std::advance(it2, 1);
 		}
 	
 		// Button on table (1 big box & 1 small box as button)
@@ -460,10 +548,12 @@ int main()
 		model = glm::mat4();
 		model = glm::translate(
 			model, 
-			glm::vec3(0.0f, 0.9f + (0.1f * sin(curtin_translate_y * PI / 180.f)), -0.35f)	
+			glm::vec3(0.0f, 0.9f + (0.1f * sin(curtin_translate_y * PI / 180.f)), -0.35f)
 		);
+		model = glm::translate(model, glm::vec3(0.0f, 0.0f, -5.0f));
 		model = glm::rotate(model, glm::radians(curtin_rotate_y), glm::vec3(0.0f, 1.0f, 0.0f));
-		model = glm::scale(model, glm::vec3(0.2f, 0.2f, 0.001f));
+		model = glm::scale(model, glm::vec3(0.6f, 0.2f, 0.2f));
+		model = glm::translate(model, glm::vec3(0.0f, 0.0f, 5.0f));
 
 		lighting_shader.setMat4("model", model);
 
@@ -511,33 +601,41 @@ void process_input(GLFWwindow *window)
 		glfwSetWindowShouldClose(window, true);
 	}
 
-	float cameraSpeed;
+	// Double speed when "Shift" pressed
 	if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_RELEASE)
-		cameraSpeed = 2.5 * delta_time; 
+		cam.setSpeed(2.5 * delta_time); 
 	else
-		cameraSpeed = 2.5 * delta_time * 2;	// double speed with "Shift" pressed
-
+		cam.setSpeed(2.5 * delta_time * 2);
+	
 	// Move around
+	float cameraSpeed = cam.getSpeed();
 	glm::vec3 newPos;
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && 
 	    !collisionAt(cam.getPosition() + cameraSpeed * player.getFront())) {
-		cam.setPosition(cam.getPosition() + cameraSpeed * player.getFront());
-		player.setPosition(cam.getPosition() + cameraSpeed * player.getFront());
+		cam.move(cameraSpeed * player.getFront());
+		player.move(cameraSpeed * player.getFront());
 	}
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS &&
 		!collisionAt(cam.getPosition() - cameraSpeed * player.getFront())) {
-		cam.setPosition(cam.getPosition() - cameraSpeed * player.getFront());
-		player.setPosition(player.getPosition() - cameraSpeed * player.getFront());
+		cam.move(-cameraSpeed * player.getFront());
+		player.move(-cameraSpeed * player.getFront());
 	}
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && 
 		!collisionAt(cam.getPosition() - cam.getRight() * cameraSpeed)) {
-		cam.setPosition(cam.getPosition() - cam.getRight() * cameraSpeed);
-		player.setPosition(player.getPosition() - cam.getRight() * cameraSpeed);
+		cam.move(-cam.getRight() * cameraSpeed);
+		player.move(-cam.getRight() * cameraSpeed);
 	}
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && 
 		!collisionAt(cam.getPosition() + cam.getRight() * cameraSpeed)) {
-		cam.setPosition(cam.getPosition() + cam.getRight() * cameraSpeed);
-		player.setPosition(player.getPosition() + cam.getRight() * cameraSpeed);
+		cam.move(cam.getRight() * cameraSpeed);
+		player.move(cam.getRight() * cameraSpeed);
+	}
+
+	//TEMP
+	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
+	{
+		torch.move(cameraSpeed * torch.getFront());
+		//table.rotate(glm::radians(1.0f));
 	}
 
 	// Toggle red button
@@ -550,7 +648,15 @@ void process_input(GLFWwindow *window)
 			BUTTON_PRESSED = true;
 		else
 			BUTTON_PRESSED = false;
-	}	
+	}
+
+	// Pick stuff up
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && INTERACTIVITY_CLOSE_ENOUGH)
+	{
+		std::list<Pickup*>::iterator it = pickups.begin();
+		std::advance(it, closest_pickup_idx);
+		pickups.erase(it); //temp
+	}
 }
 
 // What to do when the mouse moves 
@@ -615,50 +721,35 @@ bool collisionAt(glm::vec3 position)
 {
 	bool colX = position.x >= WORLD_WIDTH/2 || position.x <= -(WORLD_WIDTH/2);
 	bool colZ = position.z >= WORLD_LENGTH/2 || position.z <= -(WORLD_LENGTH/2);
- 	//std::cout << position.x << "  " << colX << std::endl;
- 	//std::cout << position.z << "  " << colZ << std::endl << std::endl;
 
 	return colX || colZ;
 }
 
-// Add an entity 
-void addEntity(Entity e, bool solid) 
+// Add an entity and construct it's model
+void addEntity(
+	Entity* e, 
+	glm::vec3 scales[], glm::vec3 positions[], int numModel,
+	unsigned int textures[], int numTextures)	
 {
-	e.setSolid(solid);
+	e->setModel(scales, positions, numModel);
+	e->setTextures(textures, numTextures);
 	entities.push_back(e);
 }
 
-// Add an entity and construct it's model
-void addEntity(
-	Entity e, 
+// Add a pickup and construct it's model
+void addPickup(
+	Pickup* p, 
 	glm::vec3 scales[], glm::vec3 positions[], int numModel,
-	unsigned int textures[], int numTextures, bool solid)	
+	unsigned int textures[], int numTextures)	
 {
-	e.setModel(scales, positions, numModel);
-	e.setTextures(textures, numTextures);
-	e.setSolid(solid);
-	entities.push_back(e);
+	p->setModel(scales, positions, numModel);
+	p->setTextures(textures, numTextures);
+	pickups.push_back(p);
 }
 
 // Initilaise the world ground, boundaries and basic objects
 void init(unsigned int textures_wall[])
 {
-	//Walls
-	glm::vec3 wall_scales[] = {
-		glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
-		glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
-		glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
-		glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
-	};
-	glm::vec3 wall_positions[] = {
-		glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
-		glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
-		glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
-		glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
-	};
-			
 	// Add the walls to be rendered	
-	walls.setModel(wall_scales, wall_positions, 4);
-	walls.setTextures(textures_wall, 2);
-	addEntity(walls, false);	
+	addEntity(&walls, wall_scales, wall_positions, 4, textures_wall, 2); 
 }

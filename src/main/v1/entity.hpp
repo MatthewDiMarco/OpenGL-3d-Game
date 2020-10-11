@@ -2,12 +2,18 @@
 #include <GLFW/glfw3.h>
 #include <list>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <learnopengl/shader_m.h> 
+
+#define PI 3.14159265
 
 // Constants
 static const float 		YAW_DEFAULT 		= -90.0f;
 static const float 		PITCH_DEFAULT 		= 0.0f;
+static const float 		SPD_DEFAULT			= 2.5f;
 static const float 		SENSITIVITY_DEFAULT = 0.05f;
+static const float 		ANIMATION_SPEED 	= 6.0f;
 
 // Abstract description of a "thing" in the world
 class Entity 
@@ -17,10 +23,11 @@ protected:
 
 	// Fields
 	glm::vec3 ePos, eDir, eFront, eUp, eRight;
-	std::list<glm::mat4> model;
+	glm::vec3 *scales;
+	glm::vec3 *positions;
 	unsigned int *textures;
-	int numTextures;
-	bool solid;
+	int numTextures, numModels;
+	float spd;
 	
 	// Helpers
 	glm::vec3 calcDirection() 
@@ -43,10 +50,9 @@ public:
 		eDir = calcDirection();
 		eRight = calcRight();
 
-		model = std::list<glm::mat4>();
 		textures = NULL; //todo
 
-		solid = false;
+		spd = SPD_DEFAULT;
 	}
 
 	// Getters
@@ -55,53 +61,43 @@ public:
 	glm::vec3 getFront() { return eFront; }
 	glm::vec3 getUp() { return eUp; }
 	glm::vec3 getRight() { return eRight; }
-	std::list<glm::mat4> getModel() { return model; }
-	bool isSolid() { return solid; }
+	float getSpeed() { return spd; }
+	glm::vec3 getScale(int idx) { return scales[idx]; }	
 
-	// Setters	
-	void setPosition(glm::vec3 inPos)
-	{
-		ePos = inPos;
-		eDir = calcDirection(); 
-	}
 	void setFront(glm::vec3 inFront)
 	{
 		eFront = inFront;
 	}
+
 	void setUp(glm::vec3 inUp)
 	{
 		eUp = inUp;
 		eRight = calcRight();
 	}
-
-	// scales[]    : size of the model
-	// positions[] : position in the space, with respect to ORIGIN
-	void setModel(glm::vec3 scales[], glm::vec3 positions[], int arrSize)
+	
+	void setModel(glm::vec3 inScales[], glm::vec3 inPositions[], int arrSize)
 	{
-		// Erase previous model
-		model = std::list<glm::mat4>();
-
-		// Construct the model(s)
-		glm::mat4 currModel;
-		for (int ii = 0; ii < arrSize; ii++)
-		{
-			currModel = glm::mat4();
-			currModel = glm::translate(currModel, positions[ii]+ePos); // move to entity position
-			currModel = glm::scale(currModel, scales[ii]); // scale
-			currModel = glm::translate(currModel, glm::vec3(0.0f, 0.5f, 0.0f)); // ??
-			model.push_back(currModel);
-		}
+		positions = inPositions;
+		scales = inScales;
+		numModels = arrSize;
 	}
+
 	void setTextures(unsigned int *inTextures, int numT)
 	{
 		textures = inTextures;
 		numTextures = numT;
 	}
-	void setSolid(bool b)
-	{
-		solid = b;
+
+	virtual glm::mat4 doTransformations(glm::mat4 currModel, int ii)
+	{	
+		currModel = glm::mat4();
+		currModel = glm::translate(currModel,positions[ii]+ePos);
+		currModel = glm::scale(currModel, scales[ii]);
+
+		return currModel;
 	}
-	void render(unsigned int VAO_box, Shader lighting_shader)
+
+	virtual void render(unsigned int VAO_box, Shader lighting_shader)
 	{
 		glBindVertexArray(VAO_box);
 
@@ -113,13 +109,30 @@ public:
 			glBindTexture(GL_TEXTURE_2D, textures[ii]);
 		}
 
-		std::list<glm::mat4>::iterator it = model.begin();
-		for (int ii = 0; ii < (int)(model.size()); ii++)
+		// Construct the model(s)
+		glm::mat4 currModel;
+		for (int ii = 0; ii < numModels; ii++)
 		{
-			lighting_shader.setMat4("model", *it);
+			currModel = doTransformations(currModel, ii);
+			
+			lighting_shader.setMat4("model", currModel);
 			glDrawArrays(GL_TRIANGLES, 0, 36);
-			std::advance(it, 1);
 		}
+	}
+
+	void move(glm::vec3 offset)
+	{
+		ePos += offset;
+	}
+
+	void rotate()
+	{
+		
+	}
+
+	void setSpeed(float newSpeed)
+	{
+		spd = newSpeed;
 	}
 };
 
@@ -197,7 +210,8 @@ class Pickup : public Entity
 private:
 
 	// Fields
-	bool animating;
+	bool animatingState, rotate, upDown;
+	float translation, rotation;
 
 public:
 
@@ -205,6 +219,126 @@ public:
 	Pickup(glm::vec3 pPos, glm::vec3 pFront, glm::vec3 pUp) 
 	: Entity(pPos, pFront, pUp)
 	{
-		animating = true;
+		animatingState = true;
+		translation = 0.0f;
+		rotation = 0.0f;
+
+		rotate = true;
+		upDown = true;
 	}
+
+	bool isAnimating() { return animatingState; }	
+
+	void setAnimating(bool b)
+	{
+		animatingState = b;
+	}
+		
+	void setRotating(bool b)
+	{
+		rotate = b;
+	}
+	
+	void setBobbing(bool b)
+	{
+		upDown = b;
+	}
+
+	glm::mat4 doTransformations(glm::mat4 currModel, int ii)
+	{
+		// Up down "bobbing" animation
+		currModel = glm::mat4();
+		currModel = glm::translate(
+			currModel, 
+			glm::vec3(0.0f, (0.1f * sin(translation * PI / 180.f)), 0.0f)
+		);
+
+		// Move to respective position
+		currModel = glm::translate(currModel, ePos);
+
+		// Rotation
+		currModel = glm::rotate(currModel, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+		currModel = glm::translate(currModel, positions[ii]);
+	
+		// Bring the model to scale
+		currModel = glm::scale(currModel, scales[ii]);
+
+		return currModel;
+	}
+
+	void render(unsigned int VAO_box, Shader lighting_shader)
+	{
+		if (animatingState)
+		{
+			translation += ANIMATION_SPEED;
+			rotation += ANIMATION_SPEED;
+			if(abs(translation - 360.0f) <= 0.1f) translation = 0.0f;
+			if(abs(rotation - 360.0f) <= 0.1f) rotation = 0.0f;
+		}
+	
+		Entity::render(VAO_box, lighting_shader);
+	}
+
+	/*	
+	void render(unsigned int VAO_box, Shader lighting_shader)
+	{
+		Entity::render(VAO_box, lighting_shader);
+
+	 	if (animatingState) 
+		{
+			translation += ANIMATION_SPEED;
+			if(abs(translation - 360.0f) <= 0.1f) translation = 0.0f;
+
+			// Animation
+			glm::mat4 mod;
+			for (int ii = 0; ii < (int)(model.size()); ii++)
+			{
+				mod = model.front();
+				if (upDown) // Bobbing animation
+				{
+					mod = glm::translate(
+						mod, 
+						glm::vec3(0.0f, (0.15f * sin(translation * PI / 180.f)), 0.0f)
+					);
+				}
+				if (rotate) // Rotation animation
+				{
+					//mod = glm::translate(mod, ePos);
+					mod = glm::rotate(
+						mod, glm::radians(ANIMATION_SPEED), glm::vec3(0.0f, 1.0f, 0.0f)
+					);
+					mod = glm::scale(mod, glm::vec3(0.5f, 0.5f, 0.5f));
+					//mod = glm::translate(mod, -ePos);
+				}
+
+				// Cycle
+				model.pop_front();
+				model.push_back(mod);
+			}
+		}
+	
+		glBindVertexArray(VAO_box);
+
+		// Textures
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, textures[0]);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, textures[1]);	
+
+		// Animation
+		glm::mat4 mod = glm::mat4();
+	
+		mod = glm::translate(
+			mod, 
+			glm::vec3(ePos.x, 0.9f + (ePos.y + 0.1f * sin(translation * PI / 180.f)), ePos.z)
+		);
+		mod = glm::rotate(mod, glm::radians(), glm::vec3(0.0f, 1.0f, 0.0f));
+		mod = glm::scale(mod, glm::vec3(0.2f, 0.2f, 0.2f));
+
+		lighting_shader.setMat4("model", mod);
+
+		glDrawArrays(GL_TRIANGLES, 0, 36);
+	}
+
+	*/
 };
