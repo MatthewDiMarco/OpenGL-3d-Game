@@ -126,9 +126,9 @@ Camera cam = Camera(
 
 // Player
 Entity player = Entity(
-	cam.getPosition(),				// Position 
-	cam.getUp(), 					// Up face
-	glm::vec3(0.0f, 0.0f, -1.0f) 	// track player's front w/o upwards direction of camera
+	cam.getPosition(), 
+	cam.getFront(),
+	cam.getUp()
 );
 
 // Torch
@@ -153,9 +153,6 @@ float delta_time = 0.0f;	// time between current frame and last frame
 float last_frame = 0.0f;
 
 // Toggle (animation or states)
-bool BUTTON_PRESSED = false;
-int BUTTON_DELAY = 0;
-bool BUTTON_CLOSE_ENOUGH = false;
 bool INTERACTIVITY_CLOSE_ENOUGH = false;
 int closest_pickup_idx = 0;
 
@@ -165,24 +162,7 @@ int SHOW_DELAY = 0;
 float curtin_rotate_y = 0.0;
 float curtin_translate_y = 0.0;
 
-// Countdown until the button trigger can be pressed again.
-// This prevents accidental burst repeat clicking of the key.
-void update_delay()
-{
-	if(BUTTON_DELAY > 0) BUTTON_DELAY -= 1;
-	if(SHOW_DELAY > 0) SHOW_DELAY -= 1;
-}
-
-// Toggle button pressing only if the camera is close enough.
-void toggle_button_distance(glm::vec3 button_pos)
-{
-	if(glm::length(cam.getPosition() - button_pos) <= INTERACT_DISTANCE)
-		BUTTON_CLOSE_ENOUGH = true;
-	else
-		BUTTON_CLOSE_ENOUGH = false;
-}
-
-// Close enough to some entity to interact with it?
+// Determine if the camera is close enough to some entity to interact with it
 bool is_close_to(glm::vec3 entity_pos)
 {
 	if(glm::length(cam.getPosition() - entity_pos) <= INTERACT_DISTANCE)
@@ -267,9 +247,7 @@ int main()
 	// Load and create a texture 
 	unsigned int tex_wood_diffuse, tex_street_diffuse, tex_grass_diffuse, tex_marble_diffuse, tex_curtin_diffuse;
 	unsigned int tex_wood_specular, tex_street_specular, tex_grass_specular, tex_marble_specular, tex_curtin_specular;
-	unsigned int tex_red_dark_diffuse, tex_red_bright_diffuse;
-	unsigned int tex_red_dark_specular, tex_red_bright_specular;
-
+	
 	tex_wood_diffuse = loadTexture(FileSystem::getPath("resources/textures/wood2.jpg").c_str());
 	tex_wood_specular = loadTexture(FileSystem::getPath("resources/textures/wood2_specular.jpg").c_str());
 	tex_street_diffuse = loadTexture(FileSystem::getPath("resources/textures/street.png").c_str());
@@ -280,11 +258,6 @@ int main()
 	tex_marble_specular = loadTexture(FileSystem::getPath("resources/textures/marble_specular.jpg").c_str());
 	tex_curtin_diffuse = loadTexture(FileSystem::getPath("resources/textures/curtin.jpg").c_str());
 	tex_curtin_specular = loadTexture(FileSystem::getPath("resources/textures/curtin_specular.jpg").c_str());
-
-	tex_red_dark_diffuse = loadTexture(FileSystem::getPath("resources/textures/red_dark.jpg").c_str());
-	tex_red_dark_specular = loadTexture(FileSystem::getPath("resources/textures/red_dark_specular.jpg").c_str());
-	tex_red_bright_diffuse = loadTexture(FileSystem::getPath("resources/textures/red_bright.jpg").c_str());
-	tex_red_bright_specular = loadTexture(FileSystem::getPath("resources/textures/red_bright_specular.jpg").c_str());
 
 	// Initialise WORLD and ENTITIES
 	// ------------------------------------------------------------------------------------------
@@ -372,9 +345,6 @@ int main()
 		delta_time = currentFrame - last_frame;
 		last_frame = currentFrame;
 
-		// Update delay countdown
-		update_delay();
-
 		// Input
 		process_input(window);
 
@@ -389,17 +359,8 @@ int main()
 
 		// Light properties
 		lighting_shader.setVec3("light.ambient", 0.1f, 0.1f, 0.1f);
-
-		if(BUTTON_PRESSED == true)
-		{
-			lighting_shader.setVec3("light.diffuse", 0.8f, 0.8f, 0.8f);
-			lighting_shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
-		}
-		else
-		{
-			lighting_shader.setVec3("light.diffuse", 0.0f, 0.0f, 0.0f);
-			lighting_shader.setVec3("light.specular", 0.0f, 0.0f, 0.0f);
-		}
+		lighting_shader.setVec3("light.diffuse", 0.8f, 0.8f, 0.8f);
+		lighting_shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);	
 
 		// Material properties
         lighting_shader.setFloat("material.shininess", 65.0f);
@@ -470,95 +431,6 @@ int main()
 			std::advance(it2, 1);
 		}
 	
-		// Button on table (1 big box & 1 small box as button)
-		glm::vec3 button_scales[] = {
-			glm::vec3( 0.2f,  0.12f,  0.2f),	//case
-			glm::vec3( 0.12f,  0.12f,  0.12f),	//button
-		};
-
-		float red_button_height = 0.05f;
-		if(BUTTON_PRESSED == true) {red_button_height -= 0.02f;}
-
-		glm::vec3 button_positions[] = {
-			glm::vec3( 0.0f,  0.0f,  0.0f),					//case
-			glm::vec3( 0.0f,  red_button_height,  0.0f),	//button
-		};
-
-		glm::vec3 button_final_location = glm::vec3(0.0f, 0.56f, 0.25f);
-		toggle_button_distance(button_final_location); 
-
-		glBindVertexArray(VAO_box);
-		
-		for(int tab = 0; tab < 2; tab++)
-		{	
-			glActiveTexture(GL_TEXTURE0);
-			if(tab == 0)
-			{	
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, tex_marble_diffuse);
-				glActiveTexture(GL_TEXTURE1);
-				glBindTexture(GL_TEXTURE_2D, tex_marble_specular);
-			}
-			else
-			{
-				if(BUTTON_PRESSED == false) // Not Pressed
-				{
-					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, tex_red_dark_diffuse);
-					glActiveTexture(GL_TEXTURE1);
-					glBindTexture(GL_TEXTURE_2D, tex_red_dark_specular);
-				}
-				else // Pressed
-				{
-					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, tex_red_bright_diffuse);
-					glActiveTexture(GL_TEXTURE1);
-					glBindTexture(GL_TEXTURE_2D, tex_red_bright_specular);
-				}
-			}
-
-			model = glm::mat4();
-			model = glm::translate(model, button_final_location);
-			model = glm::translate(model, button_positions[tab]);
-			model = glm::scale(model, button_scales[tab]);
-			model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
-
-			lighting_shader.setMat4("model", model);
-
-			glDrawArrays(GL_TRIANGLES, 0, 36);
-		}
-
-		// Curtin Logo
-		glBindVertexArray(VAO_box);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, tex_curtin_diffuse);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, tex_curtin_specular);
-
-		// Transformation for animation
-		if(BUTTON_PRESSED == true)
-		{
-			curtin_translate_y += 6.0f;
-			curtin_rotate_y += 6.0f;
-			if(abs(curtin_translate_y - 360.0f) <= 0.1f) curtin_translate_y = 0.0f;
-			if(abs(curtin_rotate_y - 360.0f) <= 0.1f) curtin_rotate_y = 0.0f;
-		}
-
-		model = glm::mat4();
-		model = glm::translate(
-			model, 
-			glm::vec3(0.0f, 0.9f + (0.1f * sin(curtin_translate_y * PI / 180.f)), -0.35f)
-		);
-		model = glm::translate(model, glm::vec3(0.0f, 0.0f, -5.0f));
-		model = glm::rotate(model, glm::radians(curtin_rotate_y), glm::vec3(0.0f, 1.0f, 0.0f));
-		model = glm::scale(model, glm::vec3(0.6f, 0.2f, 0.2f));
-		model = glm::translate(model, glm::vec3(0.0f, 0.0f, 5.0f));
-
-		lighting_shader.setMat4("model", model);
-
-		glDrawArrays(GL_TRIANGLES, 0, 36);
-
 		// Draw the light source
 		lamp_shader.use(); 
 		lamp_shader.setMat4("projection", projection);
@@ -567,9 +439,7 @@ int main()
 		model = glm::translate(model, light_pos);
 		model = glm::scale(model, glm::vec3(0.01f)); // a smaller cube
 		lamp_shader.setMat4("model", model);
-		
-		if(BUTTON_PRESSED == true) lamp_shader.setFloat("intensity", 1.0);
-		else lamp_shader.setFloat("intensity", 0.3);
+		lamp_shader.setFloat("intensity", 1.0);
 
 		glBindVertexArray(VAO_light);
 		glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -630,26 +500,7 @@ void process_input(GLFWwindow *window)
 		cam.move(cam.getRight() * cameraSpeed);
 		player.move(cam.getRight() * cameraSpeed);
 	}
-
-	//TEMP
-	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
-	{
-		torch.move(cameraSpeed * torch.getFront());
-		//table.rotate(glm::radians(1.0f));
-	}
-
-	// Toggle red button
-	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && 
-		BUTTON_DELAY == 0 && 
-		BUTTON_CLOSE_ENOUGH == true)
-	{
-		BUTTON_DELAY = 20;
-		if(BUTTON_PRESSED == false) 		
-			BUTTON_PRESSED = true;
-		else
-			BUTTON_PRESSED = false;
-	}
-
+	
 	// Pick stuff up
 	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && INTERACTIVITY_CLOSE_ENOUGH)
 	{
