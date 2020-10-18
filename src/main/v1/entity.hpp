@@ -22,12 +22,12 @@ class Entity
 protected:
 
 	// Fields
-	glm::vec3 ePos, eDir, eFront, eUp, eRight;
+	glm::vec3 ePos, eDir, eFront, eUp, eRight, ancor; // ancor to rotate on
 	glm::vec3 *scales;
 	glm::vec3 *positions;
 	unsigned int *textures;
 	int numTextures, numModels;
-	float spd, angle;
+	float spd, angle, pitch;
 	
 	// Helpers
 	glm::vec3 calcDirection() 
@@ -49,11 +49,13 @@ public:
 		eUp = inUp;
 		eDir = calcDirection();
 		eRight = calcRight();
+		ancor = ePos;
 
 		textures = NULL; //todo
 
 		spd = SPD_DEFAULT;
 		angle = 0;
+		pitch = 0;
 	}
 
 	// Getters
@@ -63,7 +65,17 @@ public:
 	glm::vec3 getUp() { return eUp; }
 	glm::vec3 getRight() { return eRight; }
 	float getSpeed() { return spd; }
-	glm::vec3 getScale(int idx) { return scales[idx]; }	
+	glm::vec3 getScale(int idx) { return scales[idx]; }
+	glm::vec3 getAncor() { return ancor; }
+	float getAngle() { return angle; }
+	float getPitch() { return pitch; }
+
+	void setPosition(glm::vec3 newPos)
+	{
+		ePos = newPos;
+		eDir = calcDirection();
+		eRight = calcRight();
+	}
 
 	void setFront(glm::vec3 inFront)
 	{
@@ -91,11 +103,21 @@ public:
 
 	virtual glm::mat4 doTransformations(glm::mat4 currModel, int ii)
 	{	
-		currModel = glm::mat4();
-		currModel = glm::translate(currModel, ePos);
+		currModel = glm::translate(currModel, ancor);
+
 		if (angle != 0) {
 			currModel = glm::rotate(currModel, glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
 		}
+		if (pitch != 0) {
+			currModel = glm::rotate(currModel, glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+		}
+
+		//If the ancor IS NOT ePos, we must first convert it back
+		if (ancor.x != ePos.x || ancor.y != ePos.y || ancor.z != ePos.z) { 
+			currModel = glm::translate(currModel, -ancor);
+			currModel = glm::translate(currModel, ePos);
+		}
+
 		currModel = glm::translate(currModel, positions[ii]);
 		currModel = glm::scale(currModel, scales[ii]);
 
@@ -118,6 +140,7 @@ public:
 		glm::mat4 currModel;
 		for (int ii = 0; ii < numModels; ii++)
 		{
+			currModel = glm::mat4();
 			currModel = doTransformations(currModel, ii);
 			
 			lighting_shader.setMat4("model", currModel);
@@ -128,14 +151,29 @@ public:
 	void move(glm::vec3 offset)
 	{
 		ePos += offset;
+		ancor += offset;
 	}
+
+	void setAngle(float a) { angle = a; }
+	void setPitch(float p) { pitch = p; }
 
 	void changeAngleBy(float angle_offset)
 	{
-		angle += angle_offset;	
+		angle += angle_offset;
 		while (angle > 360) angle -= 360;
 		while (angle < 0) angle += 360;
-		std::cout << angle << "\n";
+	}
+
+	void changePitchBy(float angle_offset)
+	{
+		pitch += angle_offset;
+		while (pitch > 89.0f) pitch -= 89.0f;
+		while (pitch < -89.0f) pitch += 89.0f;
+	}
+
+	void setAncor(glm::vec3 a)
+	{
+		ancor = a;
 	}
 
 	void setSpeed(float newSpeed)
@@ -151,9 +189,10 @@ class Camera : public Entity
 private:
 	
 	// Fields
-	float yaw, pitch; // left-to-right and up-down roation, respectively
+	float yaw; // left-to-right and up-down roation, respectively
 	float lastX, lastY, sensitivity; // old x & y positions of mouse
-	bool firstMouse;
+	bool firstMouse, itemVisible;
+	Entity* item;
 
 public:	
 	
@@ -167,6 +206,23 @@ public:
 		lastX = scrWidth / 2.0f; 
 		lastY = scrHeight / 2.0f;
 		firstMouse = true;
+		itemVisible = false;
+		item = NULL;
+	}
+
+	void setItem(Entity* inE)
+	{
+		// object should float in-front of the camera view
+		glm::vec3 offset = glm::vec3(0.07f, -0.08, -0.23f);
+		item = inE;
+		item->setPosition(ePos);
+		item->move(offset);
+		item->setAncor(ePos);
+	}
+
+	void setItemVisible(bool b)
+	{
+		itemVisible = b;
 	}
 	
 	void mouseMoved(double xpos, double ypos) 
@@ -192,6 +248,15 @@ public:
 		yaw += xoffset;
 		pitch += yoffset;
 
+		// Update item angle
+		if (item != NULL)
+		{
+			item->changeAngleBy(-xoffset);
+			if ((item->getPitch()+yoffset) < 89.0f && (item->getPitch()+yoffset) > -89.0f) {
+				item->changePitchBy(yoffset);
+			}
+		}
+
 		// Constraints -- ensure we don't flip the direction vector
 		if (pitch > 89.0f)
 		{
@@ -201,6 +266,8 @@ public:
 		{
 			pitch = -89.0f;
 		}
+		while (yaw > 360) yaw -= 360;
+		while (yaw < 0) yaw += 360;
 
 		// Update vectors
 		glm::vec3 direction;
@@ -210,6 +277,22 @@ public:
 		eFront = glm::normalize(direction); 
 		eRight = glm::normalize(glm::cross(eFront, eUp));
 	}
+
+	void move(glm::vec3 offset)
+	{
+		Entity::move(offset);
+		if (item != NULL) {
+			item->move(offset);
+		} 
+	}
+
+	void render(unsigned int VAO_box, Shader lighting_shader)
+	{
+		if (item != NULL && itemVisible)
+		{
+			item->render(VAO_box, lighting_shader);
+		}
+	}
 };
 
 class Pickup : public Entity
@@ -218,7 +301,8 @@ class Pickup : public Entity
 private:
 
 	// Fields
-	float translation, rotation;
+	float translation;
+	bool rotate;
 
 public:
 
@@ -227,27 +311,23 @@ public:
 	: Entity(pPos, pFront, pUp)
 	{
 		translation = 0.0f;
-		rotation = 0.0f;
+		rotate = true;
 	}
-			
+		
+	void setRotateAnimation(bool b)
+	{
+		rotate = b;
+	}
+		
 	glm::mat4 doTransformations(glm::mat4 currModel, int ii)
 	{
 		// Up down "bobbing" animation
-		currModel = glm::mat4();
 		currModel = glm::translate(
 			currModel, 
 			glm::vec3(0.0f, (0.1f * sin(translation * PI / 180.f)), 0.0f)
 		);
 
-		// Move to respective position
-		currModel = glm::translate(currModel, ePos);
-
-		// Rotation
-		currModel = glm::rotate(currModel, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
-		currModel = glm::translate(currModel, positions[ii]);
-	
-		// Bring the model to scale
-		currModel = glm::scale(currModel, scales[ii]);
+		currModel = Entity::doTransformations(currModel, ii);
 
 		return currModel;
 	}
@@ -255,10 +335,12 @@ public:
 	void render(unsigned int VAO_box, Shader lighting_shader)
 	{
 		translation += ANIMATION_SPEED;
-		rotation += ANIMATION_SPEED;
 		if(abs(translation - 360.0f) <= 0.1f) translation = 0.0f;
-		if(abs(rotation - 360.0f) <= 0.1f) rotation = 0.0f;
-	
+
+		if (rotate) {	
+			changeAngleBy(ANIMATION_SPEED);
+		}
+
 		Entity::render(VAO_box, lighting_shader);
 	}
 };

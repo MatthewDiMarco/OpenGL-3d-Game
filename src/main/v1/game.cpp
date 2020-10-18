@@ -131,22 +131,29 @@ Entity player = Entity(
 	cam.getUp()
 );
 
-// Torch
+// Torch Pickup
 Pickup torch = Pickup(
-	glm::vec3(5.0f, 0.5f, -5.0),
+	glm::vec3(cam.getPosition().x, 0.5f, cam.getPosition().z - 3),
 	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
 	glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
 );
 
+// Torch Equip
+Entity tEquip = Entity( 
+	cam.getPosition(),
+	cam.getFront(),
+	cam.getUp()
+);
+
 // Table
 Entity table = Entity(
-	glm::vec3(0.0f, 0.0f, 0.0f), 
+	glm::vec3(0.0f, 0.0f, -5.0f), 
 	glm::vec3(0.0f, 0.0f, -1.0f),
 	glm::vec3(0.0f, 1.0f, 0.0f)
 );
 
 // lighting
-glm::vec3 light_pos(0.0f, 1.0f, 0.1f);
+Entity* light_source; // define what entity is "producing" the light 
 
 // timing
 float delta_time = 0.0f;	// time between current frame and last frame
@@ -156,11 +163,9 @@ float last_frame = 0.0f;
 bool INTERACTIVITY_CLOSE_ENOUGH = false;
 int closest_pickup_idx = 0;
 
-int SHOW_DELAY = 0;
-
 // Animation Variables
-float curtin_rotate_y = 0.0;
-float curtin_translate_y = 0.0;
+//float curtin_rotate_y = 0.0;
+//float curtin_translate_y = 0.0;
 
 // Determine if the camera is close enough to some entity to interact with it
 bool is_close_to(glm::vec3 entity_pos)
@@ -270,6 +275,8 @@ int main()
 	unsigned int wall_tex[] = {tex_wood_diffuse, tex_wood_specular};
 	init(wall_tex);
 
+	entities.push_back(&cam);
+	
 	// Table
 	glm::vec3 table2_scales[] = {
 		glm::vec3( 1.0f,  0.1f,  1.0f),		//top
@@ -298,7 +305,7 @@ int main()
 		glm::vec3( 0.0f,  0.0f,  0.0f)
 	};
 	Pickup p = Pickup(
-		glm::vec3(0.0f, 0.5f, -5.0f), 
+		glm::vec3(0.0f, 0.5f, -4.0f), 
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f)
 	);
@@ -309,17 +316,23 @@ int main()
 	// Torch
 	unsigned int torch_tex[] = {tex_marble_diffuse, tex_marble_specular};
 	glm::vec3 torch_scales[] = {
-		glm::vec3( 0.04f,  0.06f,  0.06f),
-		glm::vec3( 0.1f,  0.02f,  0.02f)
+		glm::vec3( 0.03f,  0.03f,  0.02f),
+		glm::vec3( 0.02f,  0.02f,  0.1f)
 	};
 	glm::vec3 torch_positions[] = {
 		glm::vec3( 0.0f,  0.0f,  0.0f), // Torch head
-		glm::vec3( 0.05f,  0.002f,  -0.002f) 	// Handle
+		glm::vec3( -0.002f,  0.002f,  0.05f) 	// Handle
 	};
+	torch.setRotateAnimation(false);
 	addPickup(
 		&torch, torch_scales, torch_positions, 2, torch_tex, 2
 	);
-	
+	light_source = &torch;
+
+	tEquip.setModel(torch_scales, torch_positions, 2);
+	tEquip.setTextures(torch_tex, 2);
+	cam.setItem(&tEquip);
+
 	// Shader configuration 
 	lighting_shader.use();
 	lighting_shader.setInt("material.diffuse", 0);
@@ -330,16 +343,11 @@ int main()
 	glm::mat4 projection = glm::perspective(
 		glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f
 	);
-	//glm::mat4 projection = glm::ortho(
-		//-((float)SCR_WIDTH / (float)SCR_HEIGHT),
-		//  (float)SCR_WIDTH / (float)SCR_HEIGHT,
-		//-1.0f, 1.0f, -1.0f, 1.0f
-	//);
 	lighting_shader.setMat4("projection", projection);
 
 	// Render Loop
 	while (!glfwWindowShouldClose(window))
-	{
+	{	
 		// Per-frame time logic
 		float currentFrame = glfwGetTime();
 		delta_time = currentFrame - last_frame;
@@ -354,16 +362,22 @@ int main()
 
 		// Activate shader
 		lighting_shader.use();
-		lighting_shader.setVec3("light.position", light_pos);
-        lighting_shader.setVec3("viewPos", cam.getPosition());
+		lighting_shader.setVec3("light.position", light_source->getPosition());
+		lighting_shader.setVec3("light.direction", light_source->getFront());
+		lighting_shader.setFloat("light.cutOff", glm::cos(glm::radians(16.5f)));
+		lighting_shader.setFloat("light.outerCutOff", glm::cos(glm::radians(17.5f)));
+        lighting_shader.setVec3("viewPos", light_source->getPosition());
 
 		// Light properties
-		lighting_shader.setVec3("light.ambient", 0.1f, 0.1f, 0.1f);
-		lighting_shader.setVec3("light.diffuse", 0.8f, 0.8f, 0.8f);
-		lighting_shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);	
+		lighting_shader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
+		lighting_shader.setVec3("light.diffuse", 1.8f, 1.8f, 1.8f);
+		lighting_shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
+		lighting_shader.setFloat("light.constant", 0.1f); // brightness
+		lighting_shader.setFloat("light.linear", 0.8f);
+		lighting_shader.setFloat("light.quadratic", 0.00032f); // view distance
 
 		// Material properties
-        lighting_shader.setFloat("material.shininess", 65.0f);
+        lighting_shader.setFloat("material.shininess", 32.0f);
 		// for now set the same for every object. But, you can make it dynamic for various obj.
 
 		// Camera/view transformation
@@ -431,21 +445,6 @@ int main()
 			std::advance(it2, 1);
 		}
 	
-		// Draw the light source
-		lamp_shader.use(); 
-		lamp_shader.setMat4("projection", projection);
-		lamp_shader.setMat4("view", view);
-		model = glm::mat4();
-		model = glm::translate(model, light_pos);
-		model = glm::scale(model, glm::vec3(0.01f)); // a smaller cube
-		lamp_shader.setMat4("model", model);
-		lamp_shader.setFloat("intensity", 1.0);
-
-		glBindVertexArray(VAO_light);
-		glDrawArrays(GL_TRIANGLES, 0, 36);
-
-
-
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
 		glfwSwapBuffers(window);
 		glfwPollEvents();
@@ -506,7 +505,12 @@ void process_input(GLFWwindow *window)
 	{
 		std::list<Pickup*>::iterator it = pickups.begin();
 		std::advance(it, closest_pickup_idx);
-		pickups.erase(it); //temp
+		pickups.erase(it);
+	
+		if ((*it) == (&torch)) {
+			cam.setItemVisible(true);
+			light_source = &cam;
+		}
 	}
 }
 
