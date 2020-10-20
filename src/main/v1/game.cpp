@@ -17,6 +17,31 @@
 // Constants
 const char* GAME_TITLE = "Escape Game";
 
+// Screen
+const unsigned int SCR_WIDTH = 800;
+const unsigned int SCR_HEIGHT = 800;
+glm::mat4 perspective;
+glm::mat4 orthographic;
+
+// World
+static const float WORLD_WIDTH = 70.0f;
+static const float WORLD_LENGTH = 70.0f;
+static const glm::vec3 UP = glm::vec3(0.0f, 1.0f, 0.0f);
+static const glm::vec3 NORTH = glm::vec3(0.0f, 0.0f, -1.0f);
+static const glm::vec3 ORIGIN = glm::vec3(0.0f, 0.0f, 0.0f);
+static const float INTERACT_DISTANCE = 1.6f;
+static float lightSourceRadius = 0.5f;
+Shader* light;
+std::list<Entity*> entities;
+std::list<Pickup*> pickups;
+
+// Textures
+unsigned int* wood_textures;
+unsigned int* brick_textures;
+unsigned int* grass_textures;
+unsigned int* road_textures;
+unsigned int* marble_textures;
+
 // Box coordinate with 36 vertices.
 // Every 3 coordinates will form 1 triangle.
 // The last 2 columns represent texture coordinate for mapping.
@@ -65,6 +90,65 @@ float box[] = {
 	-0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f,  1.0f
 };
 
+// Model Descriptions -- positions and scales
+// The positions are relative to the entity's position vector, not origin.
+// i.e. "origin" for the model is the position of the entity it is attached to, which could be
+// any coordinate in the world.
+
+// Wall barriers
+glm::vec3 wall_scales[] = {
+	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
+	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
+	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
+	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
+};
+glm::vec3 wall_positions[] = {
+	glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
+	glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
+	glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
+	glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
+};
+
+// Table
+glm::vec3 table_scales[] = {
+	glm::vec3( 1.0f,  0.1f,  1.0f),		//top
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//near left
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//near right
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//far left
+	glm::vec3( 0.1f,  0.5f,  0.1f),		//far right
+};
+glm::vec3 table_positions[] = {
+	glm::vec3( 0.0f,  0.5f,  0.0f),		//top
+	glm::vec3(-0.45f, 0.2f,  0.45f),	//near left
+	glm::vec3( 0.45f, 0.2f,  0.45f),	//near right
+	glm::vec3(-0.45f, 0.2f, -0.45f),	//far left
+	glm::vec3( 0.45f, 0.2f, -0.45f),	//far right
+};
+
+// Box
+glm::vec3 pickup_scales[] = {
+	glm::vec3( 0.2f,  0.2f,  0.2f)
+};
+glm::vec3 pickup_positions[] = {
+	glm::vec3( 0.0f,  0.0f,  0.0f)
+};
+
+// Torch
+glm::vec3 torch_scales[] = {
+	glm::vec3( 0.03f,  0.03f,  0.02f),
+	glm::vec3( 0.02f,  0.02f,  0.1f)
+};
+glm::vec3 torch_positions[] = {
+	glm::vec3( 0.0f,  0.0f,  0.0f), // Torch head
+	glm::vec3( -0.002f,  0.002f,  0.05f) 	// Handle
+};
+
+// Entities
+Entity *walls, *player, *table, *tEquip; //Equiped version of the torch
+Camera *cam;
+Pickup *torch;
+Entity* light_source; // define what entity is "producing" the light
+
 // Prototype Declarations
 void mouse_callback(GLFWwindow* window, double xpos, double ypos); 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -79,103 +163,19 @@ void addPickup(
 	Pickup* p, 
 	glm::vec3 scales[], glm::vec3 positions[], int numModel,
 	unsigned int textures[], int numTextures);
-void init(unsigned int textures_wall[]);
-void render(unsigned int VAO_box, Shader lighting_shader);
 bool is_close_to(glm::vec3 entity_pos);
-
-// Screen
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 800;
-
-// World
-static const float WORLD_WIDTH = 70.0f;
-static const float WORLD_LENGTH = 70.0f;
-static const glm::vec3 UP = glm::vec3(0.0f, 1.0f, 0.0f);
-static const glm::vec3 NORTH = glm::vec3(0.0f, 0.0f, -1.0f);
-static const glm::vec3 ORIGIN = glm::vec3(0.0f, 0.0f, 0.0f);
-static const float INTERACT_DISTANCE = 1.6f;
-std::list<Entity*> entities;
-std::list<Pickup*> pickups;
-
-// Walls
-glm::vec3 wall_scales[] = {
-	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//North
-	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
-	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
-	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
-};
-glm::vec3 wall_positions[] = {
-	glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
-	glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
-	glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
-	glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
-};
-Entity walls = Entity(
-	glm::vec3(0.0f, 0.0f, 0.0f), 
-	glm::vec3(0.0f, 0.0f, -1.0f),
-	glm::vec3(0.0f, 1.0f, 0.0f)
-);
-
-// Camera
-Camera cam = Camera(
-	glm::vec3(0.0f, 0.9f, 3.0f), 	// Position
-	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
-	glm::vec3(0.0f, 1.0f,  0.0f),	// Up face
- 	SCR_WIDTH, SCR_HEIGHT
-);
-
-// Player
-Entity player = Entity(
-	cam.getPosition(), 
-	cam.getFront(),
-	cam.getUp()
-);
-
-// Torch Pickup
-Pickup torch = Pickup(
-	glm::vec3(cam.getPosition().x, 0.5f, cam.getPosition().z - 3),
-	glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
-	glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
-);
-
-// Torch Equip
-Entity tEquip = Entity( 
-	cam.getPosition(),
-	cam.getFront(),
-	cam.getUp()
-);
-
-// Table
-Entity table = Entity(
-	glm::vec3(0.0f, 0.0f, -5.0f), 
-	glm::vec3(0.0f, 0.0f, -1.0f),
-	glm::vec3(0.0f, 1.0f, 0.0f)
-);
-
-// lighting
-Entity* light_source; // define what entity is "producing" the light 
-
+void start();
+ 
 // timing
 float delta_time = 0.0f;	// time between current frame and last frame
 float last_frame = 0.0f;
 
 // Toggle (animation or states)
+bool PERSPECTIVE_PROJECTION = true;
+bool PROJECTION_UPDATED = false;
+bool SCENERY_DARK = true;
 bool INTERACTIVITY_CLOSE_ENOUGH = false;
 int closest_pickup_idx = 0;
-
-// Animation Variables
-//float curtin_rotate_y = 0.0;
-//float curtin_translate_y = 0.0;
-
-// Determine if the camera is close enough to some entity to interact with it
-bool is_close_to(glm::vec3 entity_pos)
-{
-	if(glm::length(cam.getPosition() - entity_pos) <= INTERACT_DISTANCE)
-		return true;
-	else
-		return false;
-}
-
 
 // Main Algorithm
 // --------------
@@ -216,7 +216,7 @@ int main()
 
 	// Build and compile our shader zprogram
 	Shader lighting_shader("./sample2.vs", "./sample2.fs");
-	Shader lamp_shader("./lamp.vs", "./lamp.fs");
+	light = &lighting_shader;
 	
 	// Set up vertex data (and buffer(s)) and configure vertex attributes
 	unsigned int VBO_box, VAO_box;
@@ -249,101 +249,54 @@ int main()
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
-	// Load and create a texture 
-	unsigned int tex_wood_diffuse, tex_street_diffuse, tex_grass_diffuse, tex_marble_diffuse, tex_curtin_diffuse;
-	unsigned int tex_wood_specular, tex_street_specular, tex_grass_specular, tex_marble_specular, tex_curtin_specular;
-	
-	tex_wood_diffuse = loadTexture(FileSystem::getPath("resources/textures/wood2.jpg").c_str());
-	tex_wood_specular = loadTexture(FileSystem::getPath("resources/textures/wood2_specular.jpg").c_str());
-	tex_street_diffuse = loadTexture(FileSystem::getPath("resources/textures/street.png").c_str());
-	tex_street_specular = loadTexture(FileSystem::getPath("resources/textures/street_specular.png").c_str());
-	tex_grass_diffuse = loadTexture(FileSystem::getPath("resources/textures/grass.jpg").c_str());
-	tex_grass_specular = loadTexture(FileSystem::getPath("resources/textures/grass_specular.jpg").c_str());
-	tex_marble_diffuse = loadTexture(FileSystem::getPath("resources/textures/marble.jpg").c_str());
-	tex_marble_specular = loadTexture(FileSystem::getPath("resources/textures/marble_specular.jpg").c_str());
-	tex_curtin_diffuse = loadTexture(FileSystem::getPath("resources/textures/curtin.jpg").c_str());
-	tex_curtin_specular = loadTexture(FileSystem::getPath("resources/textures/curtin_specular.jpg").c_str());
+	// Textures
+	wood_textures = new unsigned int[2];
+	brick_textures = new unsigned int[2];
+	grass_textures = new unsigned int[2];
+	road_textures = new unsigned int[2];
+	marble_textures = new unsigned int[2];
+
+	wood_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/wood2.jpg").c_str());
+	wood_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/wood2_specular.jpg").c_str());
+
+	brick_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/brickwall.jpg").c_str());
+	brick_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/red_specular.jpg").c_str());
+
+	grass_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/grass.jpg").c_str());
+	grass_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/grass_specular.jpg").c_str());
+
+	road_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/street.png").c_str());
+	road_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/street_specular.png").c_str());
+
+	marble_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/marble2.jpg").c_str());
+	marble_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/marble_specular.jpg").c_str());
 
 	// Initialise WORLD and ENTITIES
 	// ------------------------------------------------------------------------------------------
 
-	// Container for entities
-	entities = std::list<Entity*>();
-	pickups = std::list<Pickup*>();
+	start();
 	
-	// Initialise border
-	unsigned int wall_tex[] = {tex_wood_diffuse, tex_wood_specular};
-	init(wall_tex);
-
-	entities.push_back(&cam);
-	
-	// Table
-	glm::vec3 table2_scales[] = {
-		glm::vec3( 1.0f,  0.1f,  1.0f),		//top
-		glm::vec3( 0.1f,  0.5f,  0.1f),		//near left
-		glm::vec3( 0.1f,  0.5f,  0.1f),		//near right
-		glm::vec3( 0.1f,  0.5f,  0.1f),		//far left
-		glm::vec3( 0.1f,  0.5f,  0.1f),		//far right
-	};
-	glm::vec3 table2_positions[] = {
-		glm::vec3( 0.0f,  0.5f,  0.0f),		//top
-		glm::vec3(-0.45f, 0.2f,  0.45f),	//near left
-		glm::vec3( 0.45f, 0.2f,  0.45f),	//near right
-		glm::vec3(-0.45f, 0.2f, -0.45f),	//far left
-		glm::vec3( 0.45f, 0.2f, -0.45f),	//far right
-	};
-	addEntity(
-		&table, table2_scales, table2_positions, 5, wall_tex, 2
-	);
-
-	// Test pickup
-	unsigned int pickup_tex[] = {tex_curtin_diffuse, tex_curtin_specular};
-	glm::vec3 pickup_scales[] = {
-		glm::vec3( 0.2f,  0.2f,  0.2f)
-	};
-	glm::vec3 pickup_positions[] = {
-		glm::vec3( 0.0f,  0.0f,  0.0f)
-	};
-	Pickup p = Pickup(
-		glm::vec3(0.0f, 0.5f, -4.0f), 
-		glm::vec3(0.0f, 0.0f, -1.0f),
-		glm::vec3(0.0f, 1.0f, 0.0f)
-	);
-	addPickup(
-		&p, pickup_scales, pickup_positions, 1, pickup_tex, 2
-	);
-
-	// Torch
-	unsigned int torch_tex[] = {tex_marble_diffuse, tex_marble_specular};
-	glm::vec3 torch_scales[] = {
-		glm::vec3( 0.03f,  0.03f,  0.02f),
-		glm::vec3( 0.02f,  0.02f,  0.1f)
-	};
-	glm::vec3 torch_positions[] = {
-		glm::vec3( 0.0f,  0.0f,  0.0f), // Torch head
-		glm::vec3( -0.002f,  0.002f,  0.05f) 	// Handle
-	};
-	torch.setRotateAnimation(false);
-	addPickup(
-		&torch, torch_scales, torch_positions, 2, torch_tex, 2
-	);
-	light_source = &torch;
-
-	tEquip.setModel(torch_scales, torch_positions, 2);
-	tEquip.setTextures(torch_tex, 2);
-	cam.setItem(&tEquip);
-
 	// Shader configuration 
 	lighting_shader.use();
 	lighting_shader.setInt("material.diffuse", 0);
 	lighting_shader.setInt("material.specular", 1);
 
-	// Pass projection matrix to shader 
-	// (as projection matrix rarely changes there's no need to do this per frame)
-	glm::mat4 projection = glm::perspective(
-		glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f
-	);
-	lighting_shader.setMat4("projection", projection);
+	// Define projection matricies and pass to shader
+	// Can toggle between the two
+	perspective = glm::perspective(
+		glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f);
+	orthographic = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, 5.0f, 100.0f);
+	light->setMat4("projection", perspective); // TODO wasn't working cause this is outside loop!
 
 	// Render Loop
 	while (!glfwWindowShouldClose(window))
@@ -362,32 +315,46 @@ int main()
 
 		// Activate shader
 		lighting_shader.use();
+		light = &lighting_shader;
 		lighting_shader.setVec3("light.position", light_source->getPosition());
 		lighting_shader.setVec3("light.direction", light_source->getFront());
-		lighting_shader.setFloat("light.cutOff", glm::cos(glm::radians(16.5f)));
-		lighting_shader.setFloat("light.outerCutOff", glm::cos(glm::radians(17.5f)));
+		lighting_shader.setFloat("light.cutOff", glm::cos(glm::radians(20.5f)));
+		lighting_shader.setFloat("light.outerCutOff", glm::cos(glm::radians(22.5f)));
         lighting_shader.setVec3("viewPos", light_source->getPosition());
 
 		// Light properties
-		lighting_shader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
-		lighting_shader.setVec3("light.diffuse", 1.8f, 1.8f, 1.8f);
+		if (SCENERY_DARK) lighting_shader.setVec3("light.ambient", 0.1f, 0.1f, 0.1f);
+		else lighting_shader.setVec3("light.ambient", 1.0f, 1.0f, 1.0f);
+		lighting_shader.setVec3("light.diffuse", 2.0f, 2.0f, 2.0f);
 		lighting_shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
-		lighting_shader.setFloat("light.constant", 0.1f); // brightness
-		lighting_shader.setFloat("light.linear", 0.8f);
-		lighting_shader.setFloat("light.quadratic", 0.00032f); // view distance
+		lighting_shader.setFloat("light.constant", 1.0f);
+		lighting_shader.setFloat("light.linear", lightSourceRadius);
+		lighting_shader.setFloat("light.quadratic", 0.0032f);
 
 		// Material properties
-        lighting_shader.setFloat("material.shininess", 32.0f);
-		// for now set the same for every object. But, you can make it dynamic for various obj.
+        lighting_shader.setFloat("material.shininess", 52.0f);
 
 		// Camera/view transformation
 		glm::mat4 view = glm::lookAt(
-			cam.getPosition(), cam.getPosition() + cam.getFront(), cam.getUp()
+			cam->getPosition(), cam->getPosition() + cam->getFront(), cam->getUp()
 		);
-		lighting_shader.setMat4("view", view);
+		light->setMat4("view", view);
 
 		// Declare transformation matrix
 		glm::mat4 model = glm::mat4();
+
+		// Handle perspective switch
+		if (PROJECTION_UPDATED)
+		{
+			if (PERSPECTIVE_PROJECTION)
+			{
+				light->setMat4("projection", orthographic);
+			}
+			else
+			{
+				light->setMat4("projection", perspective);
+			}
+		}
 
 		// Draw objects
 		// --------------------------------------------------------------------------------------
@@ -396,14 +363,14 @@ int main()
 		glBindVertexArray(VAO_box); 
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, tex_street_diffuse);
+		glBindTexture(GL_TEXTURE_2D, road_textures[0]);
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, tex_street_specular);
+		glBindTexture(GL_TEXTURE_2D, road_textures[1]);
 
 		model = glm::mat4();
 		model = glm::scale(model, glm::vec3(10.0f, 0.001f, WORLD_LENGTH));
 
-		lighting_shader.setMat4("model", model);
+		light->setMat4("model", model);
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 
@@ -411,15 +378,15 @@ int main()
 		glBindVertexArray(VAO_box);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, tex_grass_diffuse);
+		glBindTexture(GL_TEXTURE_2D, grass_textures[0]);
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, tex_grass_specular);
+		glBindTexture(GL_TEXTURE_2D, grass_textures[1]);
 
 		model = glm::mat4();
 		model = glm::translate(model, glm::vec3(0.0f, -0.01f, 0.0f));
 		model = glm::scale(model, glm::vec3(WORLD_WIDTH, 0.001f, WORLD_LENGTH));
 
-		lighting_shader.setMat4("model", model);
+		light->setMat4("model", model);
 
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 		
@@ -427,7 +394,7 @@ int main()
 		std::list<Entity*>::iterator it1 = entities.begin();
 		for (int ii = 0; ii < (int)(entities.size()); ii++)
 		{
-			(*it1)->render(VAO_box, lighting_shader);
+			(*it1)->render(VAO_box, *light);
 			std::advance(it1, 1);
 		}
 
@@ -436,7 +403,7 @@ int main()
 		std::list<Pickup*>::iterator it2 = pickups.begin();
 		for (int ii = 0; ii < (int)(pickups.size()); ii++)
 		{	
-			(*it2)->render(VAO_box, lighting_shader);
+			(*it2)->render(VAO_box, *light);
 			if (is_close_to((*it2)->getPosition()))
 			{
 				INTERACTIVITY_CLOSE_ENOUGH = true;
@@ -453,6 +420,12 @@ int main()
 	// De-allocate all resources once they've outlived their purpose:
 	glDeleteVertexArrays(1, &VAO_box);
 	glDeleteBuffers(1, &VBO_box);
+
+	delete wood_textures;
+	delete brick_textures;
+	delete grass_textures;
+	delete road_textures;
+	delete marble_textures;
 
 	// glfw: terminate, clearing all previously allocated GLFW resources.
 	glfwTerminate();
@@ -472,44 +445,81 @@ void process_input(GLFWwindow *window)
 
 	// Double speed when "Shift" pressed
 	if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_RELEASE)
-		cam.setSpeed(2.5 * delta_time); 
+		cam->setSpeed(2.5 * delta_time); 
 	else
-		cam.setSpeed(2.5 * delta_time * 2);
+		cam->setSpeed(2.5 * delta_time * 2);
 	
 	// Move around
-	float cameraSpeed = cam.getSpeed();
+	float cameraSpeed = cam->getSpeed();
 	glm::vec3 newPos;
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && 
-	    !collisionAt(cam.getPosition() + cameraSpeed * player.getFront())) {
-		cam.move(cameraSpeed * player.getFront());
-		player.move(cameraSpeed * player.getFront());
+	    !collisionAt(cam->getPosition() + cameraSpeed * player->getFront())) {
+		cam->move(cameraSpeed * player->getFront());
+		player->move(cameraSpeed * player->getFront());
 	}
 	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS &&
-		!collisionAt(cam.getPosition() - cameraSpeed * player.getFront())) {
-		cam.move(-cameraSpeed * player.getFront());
-		player.move(-cameraSpeed * player.getFront());
+		!collisionAt(cam->getPosition() - cameraSpeed * player->getFront())) {
+		cam->move(-cameraSpeed * player->getFront());
+		player->move(-cameraSpeed * player->getFront());
 	}
 	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && 
-		!collisionAt(cam.getPosition() - cam.getRight() * cameraSpeed)) {
-		cam.move(-cam.getRight() * cameraSpeed);
-		player.move(-cam.getRight() * cameraSpeed);
+		!collisionAt(cam->getPosition() - cam->getRight() * cameraSpeed)) {
+		cam->move(-cam->getRight() * cameraSpeed);
+		player->move(-cam->getRight() * cameraSpeed);
 	}
 	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && 
-		!collisionAt(cam.getPosition() + cam.getRight() * cameraSpeed)) {
-		cam.move(cam.getRight() * cameraSpeed);
-		player.move(cam.getRight() * cameraSpeed);
+		!collisionAt(cam->getPosition() + cam->getRight() * cameraSpeed)) {
+		cam->move(cam->getRight() * cameraSpeed);
+		player->move(cam->getRight() * cameraSpeed);
+	}
+
+	// Restart
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
+	{
+		start();
 	}
 	
 	// Pick stuff up
-	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && INTERACTIVITY_CLOSE_ENOUGH)
+	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS && INTERACTIVITY_CLOSE_ENOUGH)
 	{
 		std::list<Pickup*>::iterator it = pickups.begin();
 		std::advance(it, closest_pickup_idx);
 		pickups.erase(it);
 	
-		if ((*it) == (&torch)) {
-			cam.setItemVisible(true);
-			light_source = &cam;
+		if ((*it) == (torch)) {
+			cam->setItemVisible(true);
+			light_source = cam;
+		}
+	}
+
+	// Perspective shift
+	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) 
+	{
+		PERSPECTIVE_PROJECTION = !PERSPECTIVE_PROJECTION;
+		PROJECTION_UPDATED = true;
+	}
+	
+	// Scenery shift
+	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS)
+	{
+		SCENERY_DARK = !SCENERY_DARK;	
+	}
+
+	// Increase brightness radius
+	if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+	{
+		lightSourceRadius += 0.1f;
+		if (lightSourceRadius > 2.0f) {	
+			lightSourceRadius = 2.0f;
+		}
+	}
+
+	// Decrease brightness radius
+	if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+	{
+		lightSourceRadius -= 0.1f;
+		if (lightSourceRadius < 0.0f) {	
+			lightSourceRadius = 0.1f;
 		}
 	}
 }
@@ -518,8 +528,8 @@ void process_input(GLFWwindow *window)
 // ---------------------------------------------------------------------------------------------
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
-	cam.mouseMoved(xpos, ypos); // update camera
-	player.setFront(glm::vec3(cam.getFront().x, 0.0, cam.getFront().z));
+	cam->mouseMoved(xpos, ypos); // update camera
+	player->setFront(glm::vec3(cam->getFront().x, 0.0, cam->getFront().z));
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
@@ -571,6 +581,15 @@ unsigned int loadTexture(char const * path)
 	return textureID;
 }
 
+// Determine if the camera is close enough to some entity to interact with it
+bool is_close_to(glm::vec3 entity_pos)
+{
+	if(glm::length(cam->getPosition() - entity_pos) <= INTERACT_DISTANCE)
+		return true;
+	else
+		return false;
+}
+
 // Collisions
 bool collisionAt(glm::vec3 position) 
 {
@@ -602,9 +621,70 @@ void addPickup(
 	pickups.push_back(p);
 }
 
-// Initilaise the world ground, boundaries and basic objects
-void init(unsigned int textures_wall[])
-{
-	// Add the walls to be rendered	
-	addEntity(&walls, wall_scales, wall_positions, 4, textures_wall, 2); 
+void start()
+{	
+	//Cleanup (in case of restart)
+	delete cam;
+	delete player;
+	delete tEquip;
+	delete table;
+	delete walls;
+	delete torch;	
+
+	// Container for entities
+	entities = std::list<Entity*>();
+	pickups = std::list<Pickup*>();
+
+	// Camera	
+	cam = new Camera(
+		glm::vec3(0.0f, 0.9f, 3.0f), 	// Position
+		glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
+		glm::vec3(0.0f, 1.0f,  0.0f),	// Up face
+ 		SCR_WIDTH, SCR_HEIGHT
+	);
+	entities.push_back(cam);
+
+	// Player
+	player = new Entity(
+		cam->getPosition(), 
+		cam->getFront(),
+		cam->getUp()
+	);
+
+	// Torch Equip
+	tEquip = new Entity( 
+		cam->getPosition(),
+		cam->getFront(),
+		cam->getUp()
+	);
+	tEquip->setModel(torch_scales, torch_positions, 2);
+	tEquip->setTextures(marble_textures, 2);
+	cam->setItem(tEquip);
+	cam->setItemVisible(false);
+
+	// Table
+	table = new Entity(
+		glm::vec3(0.0f, 0.0f, -5.0f), 
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+	addEntity(table, table_scales, table_positions, 5, wood_textures, 2);
+
+	// Walls
+	walls = new Entity(
+		glm::vec3(0.0f, 0.0f, 0.0f), 
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+	addEntity(walls, wall_scales, wall_positions, 4, brick_textures, 2);
+	
+	// Torch
+	torch = new Pickup(
+		glm::vec3(cam->getPosition().x, 0.5f, cam->getPosition().z - 3),
+		glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
+		glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
+	);
+	addPickup(torch, torch_scales, torch_positions, 2, marble_textures, 2);
+	torch->setRotateAnimation(false);
+	light_source = torch;
 }

@@ -124,7 +124,7 @@ public:
 		return currModel;
 	}
 
-	virtual void render(unsigned int VAO_box, Shader lighting_shader)
+	virtual void render(unsigned int VAO_box, Shader shader)
 	{
 		glBindVertexArray(VAO_box);
 
@@ -143,7 +143,7 @@ public:
 			currModel = glm::mat4();
 			currModel = doTransformations(currModel, ii);
 			
-			lighting_shader.setMat4("model", currModel);
+			shader.setMat4("model", currModel);
 			glDrawArrays(GL_TRIANGLES, 0, 36);
 		}
 	}
@@ -213,7 +213,7 @@ public:
 	void setItem(Entity* inE)
 	{
 		// object should float in-front of the camera view
-		glm::vec3 offset = glm::vec3(0.07f, -0.08, -0.23f);
+		glm::vec3 offset = glm::vec3(0.05f, -0.05, -0.22f);
 		item = inE;
 		item->setPosition(ePos);
 		item->move(offset);
