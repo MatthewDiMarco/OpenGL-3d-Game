@@ -37,7 +37,6 @@ std::list<Pickup*> pickups;
 
 // Textures
 unsigned int* wood_textures;
-unsigned int* brick_textures;
 unsigned int* grass_textures;
 unsigned int* road_textures;
 unsigned int* marble_textures;
@@ -141,6 +140,25 @@ glm::vec3 torch_scales[] = {
 glm::vec3 torch_positions[] = {
 	glm::vec3( 0.0f,  0.0f,  0.0f), // Torch head
 	glm::vec3( -0.002f,  0.002f,  0.05f) 	// Handle
+};
+
+// Lantern
+glm::vec3 lantern_scales[] {
+	glm::vec3(0.05f, 0.08f, 0.05f), // Body
+	glm::vec3(0.07f, 0.005f, 0.005f), // Center rod
+	glm::vec3(0.005f, 0.07f, 0.005f), // Right rod
+	glm::vec3(0.005f, 0.07f, 0.005f), // Left rod
+	glm::vec3(0.07f, 0.005f, 0.005f), // Handle
+	glm::vec3(0.06f, 0.005f, 0.06)  // Base
+};
+
+glm::vec3 lantern_positions[] {
+	glm::vec3(0.0f, 0.0f, 0.0f), // Body
+	glm::vec3(0.0f, -0.01f, 0.0f), // Center rod
+	glm::vec3(-0.035f, 0.025f, 0.0f), // Right rod
+	glm::vec3(0.035f, 0.025f, 0.0f), // Left rod
+	glm::vec3(0.0f, 0.06f, 0.0f), // Handle
+	glm::vec3(0.0f, -0.04f, 0.0f)  // Base
 };
 
 // Entities
@@ -251,7 +269,6 @@ int main()
 
 	// Textures
 	wood_textures = new unsigned int[2];
-	brick_textures = new unsigned int[2];
 	grass_textures = new unsigned int[2];
 	road_textures = new unsigned int[2];
 	marble_textures = new unsigned int[2];
@@ -260,11 +277,6 @@ int main()
 		"resources/textures/wood2.jpg").c_str());
 	wood_textures[1] = loadTexture(FileSystem::getPath(
 		"resources/textures/wood2_specular.jpg").c_str());
-
-	brick_textures[0] = loadTexture(FileSystem::getPath(
-		"resources/textures/brickwall.jpg").c_str());
-	brick_textures[1] = loadTexture(FileSystem::getPath(
-		"resources/textures/red_specular.jpg").c_str());
 
 	grass_textures[0] = loadTexture(FileSystem::getPath(
 		"resources/textures/grass.jpg").c_str());
@@ -296,7 +308,7 @@ int main()
 	perspective = glm::perspective(
 		glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f);
 	orthographic = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, 5.0f, 100.0f);
-	light->setMat4("projection", perspective); // TODO wasn't working cause this is outside loop!
+	light->setMat4("projection", perspective);
 
 	// Render Loop
 	while (!glfwWindowShouldClose(window))
@@ -317,22 +329,28 @@ int main()
 		lighting_shader.use();
 		light = &lighting_shader;
 		lighting_shader.setVec3("light.position", light_source->getPosition());
-		lighting_shader.setVec3("light.direction", light_source->getFront());
-		lighting_shader.setFloat("light.cutOff", glm::cos(glm::radians(20.5f)));
-		lighting_shader.setFloat("light.outerCutOff", glm::cos(glm::radians(22.5f)));
-        lighting_shader.setVec3("viewPos", light_source->getPosition());
+	    lighting_shader.setVec3("viewPos", light_source->getPosition());
 
 		// Light properties
-		if (SCENERY_DARK) lighting_shader.setVec3("light.ambient", 0.1f, 0.1f, 0.1f);
-		else lighting_shader.setVec3("light.ambient", 1.0f, 1.0f, 1.0f);
-		lighting_shader.setVec3("light.diffuse", 2.0f, 2.0f, 2.0f);
+		lighting_shader.setVec3("light.ambient", 0.1f, 0.1f, 0.1f);
+		lighting_shader.setVec3("light.diffuse", 0.8f, 0.8f, 0.8f);
 		lighting_shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
 		lighting_shader.setFloat("light.constant", 1.0f);
-		lighting_shader.setFloat("light.linear", lightSourceRadius);
-		lighting_shader.setFloat("light.quadratic", 0.0032f);
 
+		if (SCENERY_DARK)
+		{
+			lighting_shader.setFloat("light.linear", 0.001f);
+			lighting_shader.setFloat("light.quadratic", lightSourceRadius);
+		}
+		else
+		{
+			lighting_shader.setVec3("light.ambient", 1.0f, 1.0f, 1.0f);	
+			lighting_shader.setFloat("light.linear", 0.0f);
+			lighting_shader.setFloat("light.quadratic", 0.0f);
+		} 
+		
 		// Material properties
-        lighting_shader.setFloat("material.shininess", 52.0f);
+        lighting_shader.setFloat("material.shininess", 32.0f);
 
 		// Camera/view transformation
 		glm::mat4 view = glm::lookAt(
@@ -422,7 +440,6 @@ int main()
 	glDeleteBuffers(1, &VBO_box);
 
 	delete wood_textures;
-	delete brick_textures;
 	delete grass_textures;
 	delete road_textures;
 	delete marble_textures;
@@ -474,10 +491,9 @@ void process_input(GLFWwindow *window)
 	}
 
 	// Restart
-	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
-	{
-		start();
-	}
+	static bool canRestart = true;
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && canRestart) start(); canRestart = false;
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE) canRestart = true;
 	
 	// Pick stuff up
 	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS && INTERACTIVITY_CLOSE_ENOUGH)
@@ -493,34 +509,44 @@ void process_input(GLFWwindow *window)
 	}
 
 	// Perspective shift
-	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) 
+	static bool canShift = true;
+	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS && canShift) 
 	{
 		PERSPECTIVE_PROJECTION = !PERSPECTIVE_PROJECTION;
 		PROJECTION_UPDATED = true;
+		canShift = false;
 	}
+	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_RELEASE) canShift = true; 
 	
 	// Scenery shift
-	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS)
+	static bool canScene = true;
+	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && canScene)
 	{
 		SCENERY_DARK = !SCENERY_DARK;	
+		canScene = false;
 	}
+	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_RELEASE) canScene = true; 
 
 	// Increase brightness radius
 	if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
 	{
-		lightSourceRadius += 0.1f;
-		if (lightSourceRadius > 2.0f) {	
-			lightSourceRadius = 2.0f;
+		lightSourceRadius += 0.05f;
+		if (lightSourceRadius > 1.0f) {	
+			lightSourceRadius = 1.0f;
 		}
+
+		std::cout << lightSourceRadius << "\n";
 	}
 
 	// Decrease brightness radius
 	if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
 	{
-		lightSourceRadius -= 0.1f;
-		if (lightSourceRadius < 0.0f) {	
-			lightSourceRadius = 0.1f;
+		lightSourceRadius -= 0.05f;
+		if (lightSourceRadius < 0.01f) {	
+			lightSourceRadius = 0.01f;
 		}
+
+		std::cout << lightSourceRadius << "\n";
 	}
 }
 
@@ -657,7 +683,7 @@ void start()
 		cam->getFront(),
 		cam->getUp()
 	);
-	tEquip->setModel(torch_scales, torch_positions, 2);
+	tEquip->setModel(lantern_scales, lantern_positions, 6);
 	tEquip->setTextures(marble_textures, 2);
 	cam->setItem(tEquip);
 	cam->setItemVisible(false);
@@ -676,7 +702,7 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f)
 	);
-	addEntity(walls, wall_scales, wall_positions, 4, brick_textures, 2);
+	addEntity(walls, wall_scales, wall_positions, 4, wood_textures, 2);
 	
 	// Torch
 	torch = new Pickup(
@@ -684,7 +710,7 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
 		glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
 	);
-	addPickup(torch, torch_scales, torch_positions, 2, marble_textures, 2);
+	addPickup(torch, lantern_scales, lantern_positions, 6, marble_textures, 2);
 	torch->setRotateAnimation(false);
 	light_source = torch;
 }

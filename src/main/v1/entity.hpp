@@ -213,7 +213,7 @@ public:
 	void setItem(Entity* inE)
 	{
 		// object should float in-front of the camera view
-		glm::vec3 offset = glm::vec3(0.05f, -0.05, -0.22f);
+		glm::vec3 offset = glm::vec3(0.1f, -0.1, -0.3f);
 		item = inE;
 		item->setPosition(ePos);
 		item->move(offset);
