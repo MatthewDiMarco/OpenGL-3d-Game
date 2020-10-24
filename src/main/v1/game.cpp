@@ -40,6 +40,7 @@ unsigned int* wood_textures;
 unsigned int* grass_textures;
 unsigned int* road_textures;
 unsigned int* marble_textures;
+unsigned int* night_textures;
 
 // Box coordinate with 36 vertices.
 // Every 3 coordinates will form 1 triangle.
@@ -161,11 +162,34 @@ glm::vec3 lantern_positions[] {
 	glm::vec3(0.0f, -0.04f, 0.0f)  // Base
 };
 
+// Enemy
+glm::vec3 enemy_scales[] {
+	glm::vec3(0.2f, 0.5f, 0.2f), // Torso
+	glm::vec3(0.1f, 0.1f, 0.1f), // Head
+	glm::vec3(0.05f, 0.7f, 0.05f), // Right arm
+	glm::vec3(0.05f, 0.7f, 0.05f), // Left arm
+	glm::vec3(0.05f, 0.5f, 0.05f), // Right Leg
+	glm::vec3(0.05f, 0.5f, 0.05f)  // Left Leg
+};
+
+float yoff = 0.3f;
+glm::vec3 enemy_positions[] {
+	glm::vec3(0.0f, 0.1f - yoff, 0.0f), // Torso
+	glm::vec3(0.0f, 0.4f - yoff, 0.0f), // Head
+	glm::vec3(0.15f, -0.05f - yoff, 0.0f), // Right arm
+	glm::vec3(-0.15f, -0.05f - yoff, 0.02f), // Left arm
+	glm::vec3(0.05f, -0.4f - yoff, 0.0f), // Right Leg
+	glm::vec3(-0.05f, -0.4f - yoff, 0.0f)  // Left Leg
+};
+
 // Entities
 Entity *walls, *player, *table, *tEquip; //Equiped version of the torch
 Camera *cam;
 Pickup *torch;
 Entity* light_source; // define what entity is "producing" the light
+Enemy* enemy;
+
+Pickup *goal01, *goal02, *goal03, *goal04;
 
 // Prototype Declarations
 void mouse_callback(GLFWwindow* window, double xpos, double ypos); 
@@ -272,6 +296,7 @@ int main()
 	grass_textures = new unsigned int[2];
 	road_textures = new unsigned int[2];
 	marble_textures = new unsigned int[2];
+	night_textures = new unsigned int[2];
 
 	wood_textures[0] = loadTexture(FileSystem::getPath(
 		"resources/textures/wood2.jpg").c_str());
@@ -292,6 +317,11 @@ int main()
 		"resources/textures/marble2.jpg").c_str());
 	marble_textures[1] = loadTexture(FileSystem::getPath(
 		"resources/textures/marble_specular.jpg").c_str());
+
+	night_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/night_sky.jpg").c_str());
+	night_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/night_sky_specular.jpg").c_str());
 
 	// Initialise WORLD and ENTITIES
 	// ------------------------------------------------------------------------------------------
@@ -467,32 +497,38 @@ void process_input(GLFWwindow *window)
 		cam->setSpeed(2.5 * delta_time * 2);
 	
 	// Move around
-	float cameraSpeed = cam->getSpeed();
-	glm::vec3 newPos;
-	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && 
-	    !collisionAt(cam->getPosition() + cameraSpeed * player->getFront())) {
-		cam->move(cameraSpeed * player->getFront());
-		player->move(cameraSpeed * player->getFront());
-	}
-	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS &&
-		!collisionAt(cam->getPosition() - cameraSpeed * player->getFront())) {
-		cam->move(-cameraSpeed * player->getFront());
-		player->move(-cameraSpeed * player->getFront());
-	}
-	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && 
-		!collisionAt(cam->getPosition() - cam->getRight() * cameraSpeed)) {
-		cam->move(-cam->getRight() * cameraSpeed);
-		player->move(-cam->getRight() * cameraSpeed);
-	}
-	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && 
-		!collisionAt(cam->getPosition() + cam->getRight() * cameraSpeed)) {
-		cam->move(cam->getRight() * cameraSpeed);
-		player->move(cam->getRight() * cameraSpeed);
-	}
+	if (cam->isAlive()) {
+		float cameraSpeed = cam->getSpeed();
+		glm::vec3 newPos;
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && 
+	    	!collisionAt(cam->getPosition() + cameraSpeed * player->getFront())) {
+			cam->move(cameraSpeed * player->getFront());
+			player->move(cameraSpeed * player->getFront());
+		}
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS &&
+			!collisionAt(cam->getPosition() - cameraSpeed * player->getFront())) {
+			cam->move(-cameraSpeed * player->getFront());
+			player->move(-cameraSpeed * player->getFront());
+		}
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && 
+			!collisionAt(cam->getPosition() - cam->getRight() * cameraSpeed)) {
+			cam->move(-cam->getRight() * cameraSpeed);
+			player->move(-cam->getRight() * cameraSpeed);
+		}
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && 
+			!collisionAt(cam->getPosition() + cam->getRight() * cameraSpeed)) {
+			cam->move(cam->getRight() * cameraSpeed);
+			player->move(cam->getRight() * cameraSpeed);
+		}
+	} 
 
 	// Restart
 	static bool canRestart = true;
-	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && canRestart) start(); canRestart = false;
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && canRestart) 
+	{
+		start(); 
+		canRestart = false;
+	}
 	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE) canRestart = true;
 	
 	// Pick stuff up
@@ -534,8 +570,6 @@ void process_input(GLFWwindow *window)
 		if (lightSourceRadius > 1.0f) {	
 			lightSourceRadius = 1.0f;
 		}
-
-		std::cout << lightSourceRadius << "\n";
 	}
 
 	// Decrease brightness radius
@@ -545,8 +579,6 @@ void process_input(GLFWwindow *window)
 		if (lightSourceRadius < 0.01f) {	
 			lightSourceRadius = 0.01f;
 		}
-
-		std::cout << lightSourceRadius << "\n";
 	}
 }
 
@@ -655,7 +687,8 @@ void start()
 	delete tEquip;
 	delete table;
 	delete walls;
-	delete torch;	
+	delete torch;
+	delete enemy;
 
 	// Container for entities
 	entities = std::list<Entity*>();
@@ -690,10 +723,22 @@ void start()
 
 	// Table
 	table = new Entity(
-		glm::vec3(0.0f, 0.0f, -5.0f), 
+		glm::vec3(19.0f, 0.45f, -18.0f), 
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f)
 	);
+	table->setPitch(185.0f);
+	table->setRoll(5.1f);
+	addEntity(table, table_scales, table_positions, 5, wood_textures, 2);
+	
+	// Table 2
+	table = new Entity(
+		glm::vec3(16.0f, -0.35f, -20.0f), 
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+	table->setPitch(356.0f);
+	table->setYaw(35.0f);
 	addEntity(table, table_scales, table_positions, 5, wood_textures, 2);
 
 	// Walls
@@ -711,6 +756,55 @@ void start()
 		glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
 	);
 	addPickup(torch, lantern_scales, lantern_positions, 6, marble_textures, 2);
-	torch->setRotateAnimation(false);
 	light_source = torch;
+
+	// Enemy
+	enemy = new Enemy(
+		glm::vec3(cam->getPosition().x, cam->getPosition().y, cam->getPosition().z - 10),
+		glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
+		glm::vec3(0.0f, 1.0f,  0.0f),	// Up face
+		cam // target to pursue
+	);
+	enemy->setSpeed(0.05f);
+	float animationSpd = 10.0f;
+	enemy->setPitchAnimation(2, animationSpd);
+	enemy->setPitchAnimation(3, -animationSpd);
+	enemy->setPitchAnimation(4, animationSpd);
+	enemy->setPitchAnimation(5, -animationSpd);
+	addEntity(enemy, enemy_scales, enemy_positions, 6, night_textures, 2);
+
+	// Goals
+
+	//1
+	goal01 = new Pickup(
+ 		glm::vec3(-11.0f, 0.5f, -15.0f),
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f,  0.0f)
+	);
+	addPickup(goal01, pickup_scales, pickup_positions, 2, wood_textures, 2);
+
+	//2
+	goal02 = new Pickup(
+ 		glm::vec3(17.0f, 0.5f, -20.0f),
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f,  0.0f)
+	);
+	addPickup(goal02, pickup_scales, pickup_positions, 2, wood_textures, 2);
+
+	//3
+	goal03 = new Pickup(
+ 		glm::vec3(27.0f, 0.5f, 25.0f),
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f,  0.0f)
+	);
+	addPickup(goal03, pickup_scales, pickup_positions, 2, wood_textures, 2);
+
+	//4
+	goal04 = new Pickup(
+ 		glm::vec3(-30.0f, 0.5f, 27.0f),
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f,  0.0f)
+	);
+	addPickup(goal04, pickup_scales, pickup_positions, 2, wood_textures, 2);
+
 }

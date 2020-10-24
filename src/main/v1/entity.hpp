@@ -2,6 +2,11 @@
 #include <GLFW/glfw3.h>
 #include <list>
 
+#include <stdlib.h>
+#include <math.h>
+#include <map>
+#include <tuple>
+
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <learnopengl/shader_m.h> 
@@ -27,7 +32,9 @@ protected:
 	glm::vec3 *positions;
 	unsigned int *textures;
 	int numTextures, numModels;
-	float spd, angle, pitch;
+	float spd, yaw, pitch, roll;
+	bool alive;
+	std::map<int, std::tuple<float, float>> pitchAnimation; //<model idx, amount to increment>
 	
 	// Helpers
 	glm::vec3 calcDirection() 
@@ -44,6 +51,7 @@ public:
 	// Constructor with vectors
 	Entity(glm::vec3 inPos, glm::vec3 inFront, glm::vec3 inUp) 
 	{
+		alive = true;
 		ePos = inPos;
 		eFront = inFront;
 		eUp = inUp;
@@ -54,8 +62,10 @@ public:
 		textures = NULL; //todo
 
 		spd = SPD_DEFAULT;
-		angle = 0;
-		pitch = 0;
+
+		yaw = 0.0f;
+		pitch = PITCH_DEFAULT;
+		roll = 0.0f;
 	}
 
 	// Getters
@@ -67,8 +77,14 @@ public:
 	float getSpeed() { return spd; }
 	glm::vec3 getScale(int idx) { return scales[idx]; }
 	glm::vec3 getAncor() { return ancor; }
-	float getAngle() { return angle; }
+	float getYaw() { return yaw; }
 	float getPitch() { return pitch; }
+	float getRoll() { return roll; }
+	bool isAlive() { return alive; }
+
+	virtual void die() {
+		alive = false;
+	}
 
 	void setPosition(glm::vec3 newPos)
 	{
@@ -102,14 +118,38 @@ public:
 	}
 
 	virtual glm::mat4 doTransformations(glm::mat4 currModel, int ii)
-	{	
+	{
+		bool animated = false;
+		float originalPitch = pitch;
+		try {
+			float const upperThreshold = 25.0f;
+			float const lowerThreshold = -25.0f;
+			float ptch = std::get<0>(pitchAnimation.at(ii));
+			float increment = std::get<1>(pitchAnimation.at(ii));
+			ptch += increment;
+			setPitch(ptch);
+			//std::cout << pitch << "\n";
+			if (pitch > upperThreshold || pitch < lowerThreshold) {
+				std::get<1>(pitchAnimation.at(ii)) = -increment;
+			} 
+			std::get<0>(pitchAnimation.at(ii)) = pitch;
+			animated = true;
+ 
+		} catch (const std::out_of_range& oor) {
+			setPitch(originalPitch);		
+		}
+	
 		currModel = glm::translate(currModel, ancor);
 
-		if (angle != 0) {
-			currModel = glm::rotate(currModel, glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+		if (yaw != 0) {
+			currModel = glm::rotate(currModel, glm::radians(yaw), glm::vec3(0.0f, 1.0f, 0.0f));
 		}
 		if (pitch != 0) {
 			currModel = glm::rotate(currModel, glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+			if (animated) setPitch(originalPitch);
+		}
+		if (roll != 0) {
+			currModel = glm::rotate(currModel, glm::radians(roll), glm::vec3(0.0f, 0.0f, 1.0f));
 		}
 
 		//If the ancor IS NOT ePos, we must first convert it back
@@ -154,19 +194,20 @@ public:
 		ancor += offset;
 	}
 
-	void setAngle(float a) { angle = a; }
+	void setYaw(float a) { yaw = a; }
 	void setPitch(float p) { pitch = p; }
+	void setRoll(float r) { roll = r; }
 
-	void changeAngleBy(float angle_offset)
+	void changeYawBy(float yaw_offset)
 	{
-		angle += angle_offset;
-		while (angle > 360) angle -= 360;
-		while (angle < 0) angle += 360;
+		yaw += yaw_offset;
+		while (yaw > 360) yaw -= 360;
+		while (yaw < 0) yaw += 360;
 	}
 
-	void changePitchBy(float angle_offset)
+	void changePitchBy(float pitch_offset)
 	{
-		pitch += angle_offset;
+		pitch += pitch_offset;
 		while (pitch > 89.0f) pitch -= 89.0f;
 		while (pitch < -89.0f) pitch += 89.0f;
 	}
@@ -180,6 +221,13 @@ public:
 	{
 		spd = newSpeed;
 	}
+
+	void setPitchAnimation(int idx, float inc)
+	{
+		pitchAnimation.insert(std::pair<int, std::tuple<float, float>>(
+			idx, std::tuple<float, float>{pitch, inc})
+		);
+	}
 };
 
 // Description of the player camera
@@ -189,7 +237,6 @@ class Camera : public Entity
 private:
 	
 	// Fields
-	float yaw; // left-to-right and up-down roation, respectively
 	float lastX, lastY, sensitivity; // old x & y positions of mouse
 	bool firstMouse, itemVisible;
 	Entity* item;
@@ -199,9 +246,8 @@ public:
 	// Constructor
 	Camera(glm::vec3 camPos, glm::vec3 camFront, glm::vec3 camUp, int scrWidth, int scrHeight) 
 	: Entity(camPos, camFront, camUp)  
-	{	
-		yaw = YAW_DEFAULT;
-		pitch = PITCH_DEFAULT;
+	{
+		yaw = YAW_DEFAULT;	
 		sensitivity = SENSITIVITY_DEFAULT;
 		lastX = scrWidth / 2.0f; 
 		lastY = scrHeight / 2.0f;
@@ -227,55 +273,58 @@ public:
 	
 	void mouseMoved(double xpos, double ypos) 
 	{
-		if (firstMouse) 
+		if (alive)
 		{
+			if (firstMouse) 
+			{
+				lastX = xpos;
+				lastY = ypos;
+				firstMouse = false;
+			}
+
+			// Update coords
+			float xoffset = xpos - lastX;
+			float yoffset = lastY - ypos;
 			lastX = xpos;
 			lastY = ypos;
-			firstMouse = false;
-		}
 
-		// Update coords
-		float xoffset = xpos - lastX;
-		float yoffset = lastY - ypos;
-		lastX = xpos;
-		lastY = ypos;
+			// Apply sensitivity
+			xoffset *= sensitivity;
+			yoffset *= sensitivity;
 
-		// Apply sensitivity
-		xoffset *= sensitivity;
-		yoffset *= sensitivity;
+			// Modify cam angle
+			yaw += xoffset;
+			pitch += yoffset;
 
-		// Modify cam angle
-		yaw += xoffset;
-		pitch += yoffset;
-
-		// Update item angle
-		if (item != NULL)
-		{
-			item->changeAngleBy(-xoffset);
-			if ((item->getPitch()+yoffset) < 89.0f && (item->getPitch()+yoffset) > -89.0f) {
-				item->changePitchBy(yoffset);
+			// Update item angle
+			if (item != NULL)
+			{
+				item->changeYawBy(-xoffset);
+				if ((item->getPitch()+yoffset) < 89.0f && (item->getPitch()+yoffset) > -89.0f) {
+					item->changePitchBy(yoffset);
+				}
 			}
-		}
 
-		// Constraints -- ensure we don't flip the direction vector
-		if (pitch > 89.0f)
-		{
-			pitch = 89.0f;
-		}
-		else if (pitch < -89.0f)
-		{
-			pitch = -89.0f;
-		}
-		while (yaw > 360) yaw -= 360;
-		while (yaw < 0) yaw += 360;
+			// Constraints -- ensure we don't flip the direction vector
+			if (pitch > 89.0f)
+			{
+				pitch = 89.0f;
+			}
+			else if (pitch < -89.0f)
+			{
+				pitch = -89.0f;
+			}
+			while (yaw > 360) yaw -= 360;
+			while (yaw < 0) yaw += 360;
 
-		// Update vectors
-		glm::vec3 direction;
-		direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-		direction.y = sin(glm::radians(pitch));
-		direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-		eFront = glm::normalize(direction); 
-		eRight = glm::normalize(glm::cross(eFront, eUp));
+			// Update vectors
+			glm::vec3 direction;
+			direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+			direction.y = sin(glm::radians(pitch));
+			direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+			eFront = glm::normalize(direction); 
+			eRight = glm::normalize(glm::cross(eFront, eUp));
+		}
 	}
 
 	void move(glm::vec3 offset)
@@ -292,6 +341,12 @@ public:
 		{
 			item->render(VAO_box, lighting_shader);
 		}
+	}
+
+	void die() 
+	{
+		Entity::die();
+		ePos = glm::vec3(ePos.x, 0.1, ePos.z);
 	}
 };
 
@@ -338,9 +393,51 @@ public:
 		if(abs(translation - 360.0f) <= 0.1f) translation = 0.0f;
 
 		if (rotate) {	
-			changeAngleBy(ANIMATION_SPEED);
+			changeYawBy(ANIMATION_SPEED);
 		}
 
 		Entity::render(VAO_box, lighting_shader);
+	}
+};
+
+class Enemy : public Entity
+{
+
+private:
+
+	// Fields
+	Entity* target;
+
+public:
+
+	// Constructor
+	Enemy(glm::vec3 pPos, glm::vec3 pFront, glm::vec3 pUp, Entity* inTarget) 
+	: Entity(pPos, pFront, pUp)
+	{
+		target = inTarget;
+	}
+
+	void render(unsigned int VAO_box, Shader lighting_shader)
+	{
+		Entity::render(VAO_box, lighting_shader);
+		//set angle
+		
+		// Move towards target
+		float threshold = 1.0f;
+		if (glm::length(ePos - target->getPosition()) > threshold && target->isAlive())
+		{
+			glm::vec3 dir = target->getPosition() - ePos;
+			
+			setYaw(glm::degrees(atan2(dir.x, dir.z)));
+
+			eFront = glm::normalize(dir); 
+			eRight = glm::normalize(glm::cross(eFront, eUp));
+
+			move(eFront * spd);
+		}
+		else
+		{
+			target->die();
+		}
 	}
 };
