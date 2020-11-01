@@ -1,11 +1,25 @@
-# OpenGL-3d-Game
-A simple 3d game made using C/C++ and OpenGL
+To compile the program, create a directory called “build”. Inside this directory,
+Enter the commands “cmake ..” followed by “make”. The final executable should be
+located inside bin/main and should be titled “main__v1”.
 
+Source Files:
+game.cpp - this file contains the main algorithm, game loop and entities.
+entity.hpp - this file contains a series of classes describing entities that can
+	     exist in the game.
 
-# Bugs
-Bug #1: Mouse cursor won't stick to window
-	Fault(s): 	The mouse cursor won't stick to the center of the sceen and will move
-			  	outside the window making it impossible to turn around.
-	Replicate: 	Try to look around with the mouse.
-	Status: 	FIXED
-	Cause/Fix:	Mouse integration on VirtualBox. Disabling this setting fixed the issue.
+Controls:
+	WASD: Move
+	Mouse: Look around
+	E: Interact with items, when close enough
+	R: Restart
+	O: Toggle light-mode
+	P: Toggle perspective and orthographic projection
+	K-L: increase and decrease light attenuation, respectively
+
+Game Objective:
+	Collect the floating wooden boxes to unlock the big metal door.
+	There are 4 in total to be collected. Interact with them using 'E'.
+
+Enemy: 
+	There is a tall dark figure in pursuit of you. If you come into contact
+	with it, you die. Press 'R' to restart.
