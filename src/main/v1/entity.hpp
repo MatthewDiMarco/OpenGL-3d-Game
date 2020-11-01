@@ -33,7 +33,7 @@ protected:
 	unsigned int *textures;
 	int numTextures, numModels;
 	float spd, yaw, pitch, roll;
-	bool alive;
+	bool alive, visible;
 	std::map<int, std::tuple<float, float>> pitchAnimation; //<model idx, amount to increment>
 	
 	// Helpers
@@ -52,6 +52,7 @@ public:
 	Entity(glm::vec3 inPos, glm::vec3 inFront, glm::vec3 inUp) 
 	{
 		alive = true;
+		visible = true;
 		ePos = inPos;
 		eFront = inFront;
 		eUp = inUp;
@@ -166,25 +167,27 @@ public:
 
 	virtual void render(unsigned int VAO_box, Shader shader)
 	{
-		glBindVertexArray(VAO_box);
+		if (visible) {
+			glBindVertexArray(VAO_box);
 
-		unsigned int glTex[] = {GL_TEXTURE0, GL_TEXTURE1};
+			unsigned int glTex[] = {GL_TEXTURE0, GL_TEXTURE1};
 		
-		for (int ii = 0; ii < numTextures; ii++)
-		{
-			glActiveTexture(glTex[ii]);
-			glBindTexture(GL_TEXTURE_2D, textures[ii]);
-		}
+			for (int ii = 0; ii < numTextures; ii++)
+			{
+				glActiveTexture(glTex[ii]);
+				glBindTexture(GL_TEXTURE_2D, textures[ii]);
+			}
 
-		// Construct the model(s)
-		glm::mat4 currModel;
-		for (int ii = 0; ii < numModels; ii++)
-		{
-			currModel = glm::mat4();
-			currModel = doTransformations(currModel, ii);
+			// Construct the model(s)
+			glm::mat4 currModel;
+			for (int ii = 0; ii < numModels; ii++)
+			{
+				currModel = glm::mat4();
+				currModel = doTransformations(currModel, ii);
 			
-			shader.setMat4("model", currModel);
-			glDrawArrays(GL_TRIANGLES, 0, 36);
+				shader.setMat4("model", currModel);
+				glDrawArrays(GL_TRIANGLES, 0, 36);
+			}
 		}
 	}
 
@@ -220,6 +223,11 @@ public:
 	void setSpeed(float newSpeed)
 	{
 		spd = newSpeed;
+	}
+
+	void setVisible(bool b) 
+	{
+		visible = b;	
 	}
 
 	void setPitchAnimation(int idx, float inc)

@@ -26,6 +26,7 @@ glm::mat4 orthographic;
 // World
 static const float WORLD_WIDTH = 70.0f;
 static const float WORLD_LENGTH = 70.0f;
+static const float DOOR_WIDTH = 10.0f;
 static const glm::vec3 UP = glm::vec3(0.0f, 1.0f, 0.0f);
 static const glm::vec3 NORTH = glm::vec3(0.0f, 0.0f, -1.0f);
 static const glm::vec3 ORIGIN = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -37,6 +38,9 @@ std::list<Pickup*> pickups;
 
 // Textures
 unsigned int* wood_textures;
+unsigned int* brick_textures;
+unsigned int* box_textures;
+unsigned int* metal_textures;
 unsigned int* grass_textures;
 unsigned int* road_textures;
 unsigned int* marble_textures;
@@ -101,12 +105,24 @@ glm::vec3 wall_scales[] = {
 	glm::vec3( WORLD_WIDTH,  10.0f,  0.01f),	//South
 	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//East
 	glm::vec3( 0.01f,  10.0f,  WORLD_LENGTH),	//West
+	glm::vec3( WORLD_WIDTH/2 - DOOR_WIDTH/2,  10.0f,  0.01f),
+	glm::vec3( WORLD_WIDTH/2 - DOOR_WIDTH/2,  10.0f,  0.01f),
 };
 glm::vec3 wall_positions[] = {
 	glm::vec3( 0.0f,  			0.0f,  -(WORLD_LENGTH/2)),	//North
 	glm::vec3( 0.0f,  			0.0f,   (WORLD_LENGTH/2)),	//South
 	glm::vec3( (WORLD_WIDTH/2), 0.0f,   0.0f),				//East
 	glm::vec3(-(WORLD_WIDTH/2), 0.0f,   0.0f),				//West
+	glm::vec3( -20,  			0.0f,  -(WORLD_LENGTH/2.5)),
+	glm::vec3(  20,  			0.0f,  -(WORLD_LENGTH/2.5)),	
+};
+
+// Door
+glm::vec3 door_scales[] = {
+	glm::vec3(DOOR_WIDTH, 10.0f, 0.01f)
+};
+glm::vec3 door_positions[] = {
+	glm::vec3(0.0f, 0.0f, -(WORLD_WIDTH/2.5))
 };
 
 // Table
@@ -183,7 +199,7 @@ glm::vec3 enemy_positions[] {
 };
 
 // Entities
-Entity *walls, *player, *table, *tEquip; //Equiped version of the torch
+Entity *walls, *door, *player, *table, *tEquip; //Equiped version of the torch
 Camera *cam;
 Pickup *torch;
 Entity* light_source; // define what entity is "producing" the light
@@ -217,7 +233,9 @@ bool PERSPECTIVE_PROJECTION = true;
 bool PROJECTION_UPDATED = false;
 bool SCENERY_DARK = true;
 bool INTERACTIVITY_CLOSE_ENOUGH = false;
+bool ALL_ITEMS_FOUND = false;
 int closest_pickup_idx = 0;
+int num_items_found;
 
 // Main Algorithm
 // --------------
@@ -293,6 +311,9 @@ int main()
 
 	// Textures
 	wood_textures = new unsigned int[2];
+	brick_textures = new unsigned int[2];
+	box_textures = new unsigned int[2];
+	metal_textures = new unsigned int[2];
 	grass_textures = new unsigned int[2];
 	road_textures = new unsigned int[2];
 	marble_textures = new unsigned int[2];
@@ -302,6 +323,21 @@ int main()
 		"resources/textures/wood2.jpg").c_str());
 	wood_textures[1] = loadTexture(FileSystem::getPath(
 		"resources/textures/wood2_specular.jpg").c_str());
+
+	brick_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/brickwall.jpg").c_str());
+	brick_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/marble_specular.jpg").c_str());
+
+	box_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/container2.png").c_str());
+	box_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/container2_specular.png").c_str());
+
+	metal_textures[0] = loadTexture(FileSystem::getPath(
+		"resources/textures/metal.png").c_str());
+	metal_textures[1] = loadTexture(FileSystem::getPath(
+		"resources/textures/marble_specular.jpg").c_str());
 
 	grass_textures[0] = loadTexture(FileSystem::getPath(
 		"resources/textures/grass.jpg").c_str());
@@ -396,11 +432,11 @@ int main()
 		{
 			if (PERSPECTIVE_PROJECTION)
 			{
-				light->setMat4("projection", orthographic);
+				light->setMat4("projection", perspective);
 			}
 			else
 			{
-				light->setMat4("projection", perspective);
+				light->setMat4("projection", orthographic);
 			}
 		}
 
@@ -541,6 +577,12 @@ void process_input(GLFWwindow *window)
 		if ((*it) == (torch)) {
 			cam->setItemVisible(true);
 			light_source = cam;
+		} else {
+			num_items_found += 1;
+			if (num_items_found == 4) {
+				ALL_ITEMS_FOUND = true;
+				door->setVisible(false);
+			}
 		}
 	}
 
@@ -652,7 +694,7 @@ bool is_close_to(glm::vec3 entity_pos)
 bool collisionAt(glm::vec3 position) 
 {
 	bool colX = position.x >= WORLD_WIDTH/2 || position.x <= -(WORLD_WIDTH/2);
-	bool colZ = position.z >= WORLD_LENGTH/2 || position.z <= -(WORLD_LENGTH/2);
+	bool colZ = position.z >= WORLD_LENGTH/2 || position.z <= -(WORLD_LENGTH/2.5);
 
 	return colX || colZ;
 }
@@ -687,6 +729,7 @@ void start()
 	delete tEquip;
 	delete table;
 	delete walls;
+	delete door;
 	delete torch;
 	delete enemy;
 
@@ -747,11 +790,19 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f)
 	);
-	addEntity(walls, wall_scales, wall_positions, 4, wood_textures, 2);
+	addEntity(walls, wall_scales, wall_positions, 6, brick_textures, 2);
+
+	// Door
+	door = new Entity(
+		glm::vec3(0.0f, 0.0f, 0.0f), 
+		glm::vec3(0.0f, 0.0f, -1.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+	addEntity(door, door_scales, door_positions, 1, metal_textures, 2);
 	
 	// Torch
 	torch = new Pickup(
-		glm::vec3(cam->getPosition().x, 0.5f, cam->getPosition().z - 3),
+		glm::vec3(cam->getPosition().x, 0.5f, cam->getPosition().z - 1),
 		glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
 		glm::vec3(0.0f, 1.0f,  0.0f)	// Up face
 	);
@@ -760,7 +811,7 @@ void start()
 
 	// Enemy
 	enemy = new Enemy(
-		glm::vec3(cam->getPosition().x, cam->getPosition().y, cam->getPosition().z - 10),
+		glm::vec3(cam->getPosition().x, cam->getPosition().y, cam->getPosition().z - 15),
 		glm::vec3(0.0f, 0.0f, -1.0f),	// Front face
 		glm::vec3(0.0f, 1.0f,  0.0f),	// Up face
 		cam // target to pursue
@@ -781,7 +832,7 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f,  0.0f)
 	);
-	addPickup(goal01, pickup_scales, pickup_positions, 2, wood_textures, 2);
+	addPickup(goal01, pickup_scales, pickup_positions, 2, box_textures, 2);
 
 	//2
 	goal02 = new Pickup(
@@ -789,7 +840,7 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f,  0.0f)
 	);
-	addPickup(goal02, pickup_scales, pickup_positions, 2, wood_textures, 2);
+	addPickup(goal02, pickup_scales, pickup_positions, 2, box_textures, 2);
 
 	//3
 	goal03 = new Pickup(
@@ -797,7 +848,7 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f,  0.0f)
 	);
-	addPickup(goal03, pickup_scales, pickup_positions, 2, wood_textures, 2);
+	addPickup(goal03, pickup_scales, pickup_positions, 2, box_textures, 2);
 
 	//4
 	goal04 = new Pickup(
@@ -805,6 +856,9 @@ void start()
 		glm::vec3(0.0f, 0.0f, -1.0f),
 		glm::vec3(0.0f, 1.0f,  0.0f)
 	);
-	addPickup(goal04, pickup_scales, pickup_positions, 2, wood_textures, 2);
+	addPickup(goal04, pickup_scales, pickup_positions, 2, box_textures, 2);
+
+	num_items_found = 0;
+	ALL_ITEMS_FOUND = false;
 
 }
